@@ -1,0 +1,23 @@
+const express = require('express');
+const router = express.Router();
+const ctrl = require('../controllers/maintenance.controller');
+const { requireAuth, requireRole } = require('../middleware/auth');
+const { runReminderCheck } = require('../services/reminder.service');
+
+router.use(requireAuth);
+
+router.get('/', ctrl.listSchedules);
+router.post('/', requireRole('ADMIN', 'MANAGER'), ctrl.createSchedule);
+router.put('/:id', requireRole('ADMIN', 'MANAGER'), ctrl.updateSchedule);
+router.delete('/:id', requireRole('ADMIN', 'MANAGER'), ctrl.deleteSchedule);
+
+// Tehnicianul responsabil (sau admin/manager) poate marca o mentenanta ca efectuata
+router.post('/:id/mark-performed', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN'), ctrl.markAsPerformed);
+
+// Endpoint manual pentru a declansa imediat verificarea de remindere (util pt testare / buton "Trimite acum")
+router.post('/run-reminder-check', requireRole('ADMIN'), async (req, res) => {
+  const result = await runReminderCheck();
+  res.json(result);
+});
+
+module.exports = router;

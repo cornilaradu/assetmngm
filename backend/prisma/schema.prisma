@@ -1,0 +1,109 @@
+// Schema Prisma pentru Portalul de Mentenanta Asset-uri
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  TECHNICIAN
+  VIEWER
+}
+
+enum MaintenanceStatus {
+  UPCOMING   // programata, in viitor
+  DUE_SOON   // se apropie scadenta (in intervalul de reminder)
+  OVERDUE    // depasita
+  DONE       // efectuata la timp / marcata ca finalizata
+}
+
+model Department {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  users     User[]
+  assets    Asset[]
+  createdAt DateTime @default(now())
+}
+
+model User {
+  id             String       @id @default(cuid())
+  email          String       @unique
+  passwordHash   String
+  fullName       String
+  role           Role         @default(VIEWER)
+  department     Department?  @relation(fields: [departmentId], references: [id])
+  departmentId   String?
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+
+  responsibleFor MaintenanceSchedule[] @relation("ResponsibleUser")
+  assetsOwned    Asset[]               @relation("AssetOwner")
+}
+
+model Asset {
+  id            String   @id @default(cuid())
+  name          String
+  internalCode  String   @unique
+  category      String
+  location      String?
+  description   String?
+  purchaseDate  DateTime?
+  status        String   @default("ACTIVE") // ACTIVE, RETIRED, IN_REPAIR
+
+  department    Department? @relation(fields: [departmentId], references: [id])
+  departmentId  String?
+
+  owner         User?    @relation("AssetOwner", fields: [ownerId], references: [id])
+  ownerId       String?
+
+  maintenanceSchedules MaintenanceSchedule[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Un "tip de mentenanta" configurat pentru un asset (ex: "Revizie tehnica anuala",
+// "Verificare ISCIR", "Schimb ulei", etc.) cu recurenta proprie.
+model MaintenanceSchedule {
+  id                String   @id @default(cuid())
+  asset             Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  assetId           String
+
+  maintenanceType   String   // ex: "Revizie anuala", "Verificare PSI", "Calibrare"
+  description       String?
+
+  recurrenceDays    Int      // la cate zile se repeta mentenanta (0 = one-time)
+  lastPerformedAt   DateTime?
+  nextDueDate       DateTime
+
+  reminderDaysBefore Int     @default(7) // cu cate zile inainte se trimite reminder-ul
+  reminderSentAt      DateTime?          // ultima data cand s-a trimis reminder pt scadenta curenta
+
+  responsible       User?    @relation("ResponsibleUser", fields: [responsibleId], references: [id])
+  responsibleId     String?
+  responsibleEmailCc String? // email suplimentar (ex: email de departament), optional
+
+  status            MaintenanceStatus @default(UPCOMING)
+  active             Boolean  @default(true)
+
+  history           MaintenanceHistory[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Istoric: fiecare data cand o mentenanta a fost efectiv realizata
+model MaintenanceHistory {
+  id            String   @id @default(cuid())
+  schedule      MaintenanceSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  scheduleId    String
+  performedAt   DateTime @default(now())
+  performedBy   String?  // nume/email liber (nu neaparat user din sistem, poate fi tehnician extern)
+  notes         String?
+  createdAt     DateTime @default(now())
+}
