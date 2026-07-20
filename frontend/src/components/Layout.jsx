@@ -44,9 +44,14 @@ export default function Layout() {
         <div className="p-4 border-t border-brand-600 text-sm">
           <div className="font-medium">{user?.fullName}</div>
           <div className="text-blue-200 text-xs mb-2">{user?.role}</div>
-          <button onClick={handleLogout} className="text-blue-100 hover:text-white underline text-xs">
-            Delogare
-          </button>
+          <div className="flex gap-3">
+            <NavLink to="/profile" className="text-blue-100 hover:text-white underline text-xs">
+              Contul meu
+            </NavLink>
+            <button onClick={handleLogout} className="text-blue-100 hover:text-white underline text-xs">
+              Delogare
+            </button>
+          </div>
         </div>
       </aside>
       <main className="flex-1 p-8 overflow-y-auto">

@@ -7,5 +7,6 @@ router.post('/login', ctrl.login);
 // Doar un ADMIN poate crea utilizatori noi (evita inregistrari libere pe un portal intern)
 router.post('/register', requireAuth, requireRole('ADMIN'), ctrl.register);
 router.get('/me', requireAuth, ctrl.me);
+router.post('/change-password', requireAuth, ctrl.changePassword);
 
 module.exports = router;
