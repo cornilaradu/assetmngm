@@ -57,6 +57,9 @@ async function createAsset(req, res) {
     if (!name || !internalCode || !category) {
       return res.status(400).json({ error: 'name, internalCode si category sunt obligatorii.' });
     }
+    if (!departmentId) {
+      return res.status(400).json({ error: 'departmentId (departamentul responsabil) este obligatoriu.' });
+    }
 
     const asset = await prisma.asset.create({
       data: {

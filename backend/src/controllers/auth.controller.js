@@ -69,6 +69,35 @@ async function login(req, res) {
   }
 }
 
+async function changePassword(req, res) {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'currentPassword si newPassword sunt obligatorii.' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'Parola noua trebuie sa aiba cel putin 6 caractere.' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (!user) return res.status(404).json({ error: 'Utilizator negasit.' });
+
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!valid) {
+      return res.status(401).json({ error: 'Parola curenta este incorecta.' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Eroare la schimbarea parolei.' });
+  }
+}
+
 async function me(req, res) {
   const user = await prisma.user.findUnique({
     where: { id: req.user.id },
@@ -77,4 +106,4 @@ async function me(req, res) {
   return res.json(user);
 }
 
-module.exports = { register, login, me };
+module.exports = { register, login, me, changePassword };

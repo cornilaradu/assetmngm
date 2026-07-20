@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import { useAuth } from '../context/AuthContext';
 
-const emptyForm = {
+const emptyScheduleForm = {
   maintenanceType: '',
   description: '',
   recurrenceDays: 365,
@@ -16,16 +16,34 @@ const emptyForm = {
 
 export default function AssetDetail() {
   const { id } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [asset, setAsset] = useState(null);
   const [users, setUsers] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState(emptyScheduleForm);
+
+  const [editMode, setEditMode] = useState(searchParams.get('edit') === '1');
+  const [editForm, setEditForm] = useState(null);
+  const [editError, setEditError] = useState('');
+
   const { user } = useAuth();
+  const navigate = useNavigate();
   const canEdit = ['ADMIN', 'MANAGER'].includes(user?.role);
+  const canDelete = user?.role === 'ADMIN';
 
   async function load() {
     const { data } = await api.get(`/assets/${id}`);
     setAsset(data);
+    setEditForm({
+      name: data.name,
+      category: data.category,
+      location: data.location || '',
+      description: data.description || '',
+      status: data.status,
+      departmentId: data.departmentId || '',
+      ownerId: data.ownerId || '',
+    });
   }
 
   async function loadUsers() {
@@ -37,16 +55,22 @@ export default function AssetDetail() {
     }
   }
 
+  async function loadDepartments() {
+    const { data } = await api.get('/users/departments/all');
+    setDepartments(data);
+  }
+
   useEffect(() => {
     load();
     loadUsers();
+    loadDepartments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   async function handleCreateSchedule(e) {
     e.preventDefault();
     await api.post('/maintenance', { ...form, assetId: id });
-    setForm(emptyForm);
+    setForm(emptyScheduleForm);
     setShowForm(false);
     load();
   }
@@ -56,16 +80,129 @@ export default function AssetDetail() {
     load();
   }
 
-  if (!asset) return <div>Se incarca...</div>;
+  async function handleSaveAsset(e) {
+    e.preventDefault();
+    setEditError('');
+    try {
+      await api.put(`/assets/${id}`, {
+        ...editForm,
+        departmentId: editForm.departmentId || null,
+        ownerId: editForm.ownerId || null,
+      });
+      setEditMode(false);
+      searchParams.delete('edit');
+      setSearchParams(searchParams);
+      load();
+    } catch (err) {
+      setEditError(err.response?.data?.error || 'Eroare la salvarea asset-ului.');
+    }
+  }
+
+  async function handleDeleteAsset() {
+    if (!window.confirm(`Sigur vrei sa stergi asset-ul "${asset.name}"? Aceasta actiune este ireversibila si va sterge si tot istoricul de mentenanta asociat.`)) {
+      return;
+    }
+    await api.delete(`/assets/${id}`);
+    navigate('/assets');
+  }
+
+  if (!asset || !editForm) return <div>Se incarca...</div>;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">{asset.name}</h1>
-        <div className="text-sm text-gray-500">
-          {asset.internalCode} · {asset.category} · {asset.location || 'fara locatie'}
+      <div className="flex justify-between items-start">
+        <div>
+          {!editMode ? (
+            <>
+              <h1 className="text-2xl font-semibold">{asset.name}</h1>
+              <div className="text-sm text-gray-500">
+                {asset.internalCode} · {asset.category} · {asset.location || 'fara locatie'}
+              </div>
+              <div className="text-sm text-gray-500">
+                Departament: {asset.department?.name || 'nedefinit'} · Status: {asset.status}
+              </div>
+            </>
+          ) : (
+            <h1 className="text-2xl font-semibold">Editare asset</h1>
+          )}
         </div>
+        {(canEdit || canDelete) && (
+          <div className="flex gap-3 text-sm">
+            {canEdit && !editMode && (
+              <button onClick={() => setEditMode(true)} className="text-brand-600 hover:underline font-medium">
+                Editeaza asset
+              </button>
+            )}
+            {canDelete && (
+              <button onClick={handleDeleteAsset} className="text-red-600 hover:underline font-medium">
+                Sterge asset
+              </button>
+            )}
+          </div>
+        )}
       </div>
+
+      {editMode && (
+        <form onSubmit={handleSaveAsset} className="bg-white p-5 rounded-xl border grid grid-cols-2 gap-4">
+          {editError && <div className="col-span-2 bg-red-50 text-red-700 text-sm p-2 rounded">{editError}</div>}
+
+          <input required placeholder="Nume asset" value={editForm.name}
+            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+            className="border rounded-lg px-3 py-2 text-sm" />
+
+          <input required placeholder="Categorie" value={editForm.category}
+            onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+            className="border rounded-lg px-3 py-2 text-sm" />
+
+          <input placeholder="Locatie" value={editForm.location}
+            onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
+            className="border rounded-lg px-3 py-2 text-sm" />
+
+          <select value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+            className="border rounded-lg px-3 py-2 text-sm">
+            <option value="ACTIVE">Activ</option>
+            <option value="IN_REPAIR">In reparatie</option>
+            <option value="RETIRED">Casat / scos din uz</option>
+          </select>
+
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Departament responsabil</label>
+            <select value={editForm.departmentId}
+              onChange={(e) => setEditForm({ ...editForm, departmentId: e.target.value })}
+              className="border rounded-lg px-3 py-2 text-sm w-full">
+              <option value="">Fara departament</option>
+              {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Proprietar / persoana de contact</label>
+            <select value={editForm.ownerId}
+              onChange={(e) => setEditForm({ ...editForm, ownerId: e.target.value })}
+              className="border rounded-lg px-3 py-2 text-sm w-full">
+              <option value="">Fara proprietar</option>
+              {users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+            </select>
+          </div>
+
+          <textarea placeholder="Descriere (optional)" value={editForm.description}
+            onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+            className="border rounded-lg px-3 py-2 text-sm col-span-2" />
+
+          <div className="col-span-2 flex gap-3">
+            <button type="submit" className="bg-brand-600 text-white px-4 py-2 rounded-lg text-sm font-medium">
+              Salveaza modificarile
+            </button>
+            <button
+              type="button"
+              onClick={() => { setEditMode(false); searchParams.delete('edit'); setSearchParams(searchParams); }}
+              className="text-gray-600 text-sm font-medium"
+            >
+              Anuleaza
+            </button>
+          </div>
+        </form>
+      )}
 
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-semibold">Tipuri de mentenanta</h2>

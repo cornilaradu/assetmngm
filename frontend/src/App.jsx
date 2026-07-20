@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import Assets from './pages/Assets';
 import AssetDetail from './pages/AssetDetail';
 import Admin from './pages/Admin';
+import Profile from './pages/Profile';
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="assets" element={<Assets />} />
         <Route path="assets/:id" element={<AssetDetail />} />
+        <Route path="profile" element={<Profile />} />
         <Route
           path="admin"
           element={
