@@ -6,6 +6,7 @@ const authRoutes = require('./routes/auth.routes');
 const assetsRoutes = require('./routes/assets.routes');
 const maintenanceRoutes = require('./routes/maintenance.routes');
 const usersRoutes = require('./routes/users.routes');
+const categoriesRoutes = require('./routes/categories.routes');
 const { startReminderCron } = require('./services/reminder.service');
 
 const app = express();
@@ -19,6 +20,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/assets', assetsRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/categories', categoriesRoutes);
 
 // Handler generic de erori
 app.use((err, req, res, next) => {

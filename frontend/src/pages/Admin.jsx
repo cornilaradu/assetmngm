@@ -4,17 +4,24 @@ import api from '../api/client';
 export default function Admin() {
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [newDept, setNewDept] = useState('');
+  const [newCategory, setNewCategory] = useState('');
+  const [editingCategoryId, setEditingCategoryId] = useState(null);
+  const [editingCategoryName, setEditingCategoryName] = useState('');
+  const [categoryError, setCategoryError] = useState('');
   const [newUser, setNewUser] = useState({ email: '', password: '', fullName: '', role: 'VIEWER', departmentId: '' });
   const [message, setMessage] = useState('');
 
   async function load() {
-    const [u, d] = await Promise.all([
+    const [u, d, c] = await Promise.all([
       api.get('/users'),
       api.get('/users/departments/all'),
+      api.get('/categories'),
     ]);
     setUsers(u.data);
     setDepartments(d.data);
+    setCategories(c.data);
   }
 
   useEffect(() => { load(); }, []);
@@ -23,6 +30,46 @@ export default function Admin() {
     e.preventDefault();
     await api.post('/users/departments', { name: newDept });
     setNewDept('');
+    load();
+  }
+
+  async function createCategory(e) {
+    e.preventDefault();
+    setCategoryError('');
+    try {
+      await api.post('/categories', { name: newCategory });
+      setNewCategory('');
+      load();
+    } catch (err) {
+      setCategoryError(err.response?.data?.error || 'Eroare la crearea categoriei.');
+    }
+  }
+
+  function startEditCategory(cat) {
+    setEditingCategoryId(cat.id);
+    setEditingCategoryName(cat.name);
+    setCategoryError('');
+  }
+
+  async function saveEditCategory(e) {
+    e.preventDefault();
+    setCategoryError('');
+    try {
+      await api.put(`/categories/${editingCategoryId}`, { name: editingCategoryName });
+      setEditingCategoryId(null);
+      setEditingCategoryName('');
+      load();
+    } catch (err) {
+      setCategoryError(err.response?.data?.error || 'Eroare la salvarea categoriei.');
+    }
+  }
+
+  async function deleteCategory(cat) {
+    const usageWarning = cat._count?.assets > 0
+      ? `\n\nAceasta categorie este folosita in prezent de ${cat._count.assets} asset(uri). Dupa stergere, acele asset-uri vor ramane fara categorie.`
+      : '';
+    if (!window.confirm(`Sigur vrei sa stergi categoria "${cat.name}"?${usageWarning}`)) return;
+    await api.delete(`/categories/${cat.id}`);
     load();
   }
 
@@ -71,6 +118,67 @@ export default function Admin() {
           {departments.map((d) => (
             <span key={d.id} className="bg-gray-100 px-3 py-1 rounded-full text-xs">{d.name}</span>
           ))}
+        </div>
+      </section>
+
+      <section className="bg-white p-5 rounded-xl border space-y-4">
+        <h2 className="font-semibold">Categorii de asset-uri</h2>
+        <p className="text-xs text-gray-500">
+          Aceste categorii apar ca lista de selectie (dropdown) la crearea sau editarea unui asset.
+        </p>
+
+        {categoryError && <div className="bg-red-50 text-red-700 text-sm p-2 rounded">{categoryError}</div>}
+
+        <form onSubmit={createCategory} className="flex gap-2">
+          <input
+            placeholder="Categorie noua (ex: HVAC, IT, Auto)"
+            value={newCategory}
+            onChange={(e) => setNewCategory(e.target.value)}
+            className="border rounded-lg px-3 py-2 text-sm flex-1"
+            required
+          />
+          <button className="bg-brand-600 text-white px-4 py-2 rounded-lg text-sm font-medium">Adauga</button>
+        </form>
+
+        <div className="divide-y border rounded-lg">
+          {categories.map((cat) => (
+            <div key={cat.id} className="flex items-center justify-between px-3 py-2 text-sm">
+              {editingCategoryId === cat.id ? (
+                <form onSubmit={saveEditCategory} className="flex gap-2 flex-1">
+                  <input
+                    autoFocus
+                    value={editingCategoryName}
+                    onChange={(e) => setEditingCategoryName(e.target.value)}
+                    className="border rounded-lg px-2 py-1 text-sm flex-1"
+                  />
+                  <button type="submit" className="text-brand-600 text-xs font-medium">Salveaza</button>
+                  <button type="button" onClick={() => setEditingCategoryId(null)} className="text-gray-500 text-xs">
+                    Anuleaza
+                  </button>
+                </form>
+              ) : (
+                <>
+                  <span>
+                    {cat.name}
+                    <span className="text-gray-400 ml-2 text-xs">
+                      ({cat._count?.assets || 0} asset{cat._count?.assets === 1 ? '' : '-uri'})
+                    </span>
+                  </span>
+                  <div className="flex gap-3 text-xs">
+                    <button onClick={() => startEditCategory(cat)} className="text-brand-600 font-medium">
+                      Editeaza
+                    </button>
+                    <button onClick={() => deleteCategory(cat)} className="text-red-600 font-medium">
+                      Sterge
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+          {categories.length === 0 && (
+            <div className="px-3 py-3 text-sm text-gray-500">Nicio categorie creata inca.</div>
+          )}
         </div>
       </section>
 

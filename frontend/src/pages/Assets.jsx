@@ -3,11 +3,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
-const emptyForm = { name: '', internalCode: '', category: '', location: '', departmentId: '' };
+const emptyForm = { name: '', internalCode: '', categoryId: '', location: '', departmentId: '' };
 
 export default function Assets() {
   const [assets, setAssets] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -27,9 +28,15 @@ export default function Assets() {
     setDepartments(data);
   }
 
+  async function loadCategories() {
+    const { data } = await api.get('/categories');
+    setCategories(data);
+  }
+
   useEffect(() => {
     load();
     loadDepartments();
+    loadCategories();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
@@ -95,12 +102,31 @@ export default function Assets() {
           <input required placeholder="Cod intern (ex: AST-0002)" value={form.internalCode}
             onChange={(e) => setForm({ ...form, internalCode: e.target.value })}
             className="border rounded-lg px-3 py-2 text-sm" />
-          <input required placeholder="Categorie (ex: HVAC, IT, Auto)" value={form.category}
-            onChange={(e) => setForm({ ...form, category: e.target.value })}
-            className="border rounded-lg px-3 py-2 text-sm" />
+
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Categorie</label>
+            <select
+              required
+              value={form.categoryId}
+              onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
+              className="border rounded-lg px-3 py-2 text-sm w-full"
+            >
+              <option value="">Selecteaza categoria...</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            {categories.length === 0 && (
+              <div className="text-xs text-amber-600 mt-1">
+                Nicio categorie creata inca. Adauga una din pagina de Administrare.
+              </div>
+            )}
+          </div>
+
           <input placeholder="Locatie" value={form.location}
             onChange={(e) => setForm({ ...form, location: e.target.value })}
             className="border rounded-lg px-3 py-2 text-sm" />
+
           <div className="col-span-2">
             <label className="block text-xs text-gray-500 mb-1">Departament responsabil</label>
             <select
@@ -134,7 +160,9 @@ export default function Assets() {
               className="block bg-white p-4 rounded-xl border hover:shadow-md transition"
             >
               <div className="font-semibold pr-12">{asset.name}</div>
-              <div className="text-xs text-gray-500 mb-2">{asset.internalCode} · {asset.category}</div>
+              <div className="text-xs text-gray-500 mb-2">
+                {asset.internalCode} · {asset.categoryRef?.name || asset.category || 'fara categorie'}
+              </div>
               <div className="text-sm text-gray-600">{asset.location || 'Fara locatie specificata'}</div>
               <div className="text-xs text-gray-400">{asset.department?.name || 'Fara departament'}</div>
               <div className="text-xs text-gray-400 mt-2">

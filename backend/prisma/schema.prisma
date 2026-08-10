@@ -45,15 +45,25 @@ model User {
   assetsOwned    Asset[]               @relation("AssetOwner")
 }
 
+model AssetCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  assets    Asset[]
+  createdAt DateTime @default(now())
+}
+
 model Asset {
   id            String   @id @default(cuid())
   name          String
   internalCode  String   @unique
-  category      String
+  category      String?  // camp vechi, text liber - pastrat doar pentru asset-uri create inainte de introducerea categoriilor gestionate
   location      String?
   description   String?
   purchaseDate  DateTime?
   status        String   @default("ACTIVE") // ACTIVE, RETIRED, IN_REPAIR
+
+  categoryRef   AssetCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryId    String?
 
   department    Department? @relation(fields: [departmentId], references: [id])
   departmentId  String?

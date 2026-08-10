@@ -23,6 +23,7 @@ export default function AssetDetail() {
   const [asset, setAsset] = useState(null);
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyScheduleForm);
 
@@ -43,7 +44,7 @@ export default function AssetDetail() {
     setAsset(data);
     setEditForm({
       name: data.name,
-      category: data.category,
+      categoryId: data.categoryId || '',
       location: data.location || '',
       description: data.description || '',
       status: data.status,
@@ -66,10 +67,16 @@ export default function AssetDetail() {
     setDepartments(data);
   }
 
+  async function loadCategories() {
+    const { data } = await api.get('/categories');
+    setCategories(data);
+  }
+
   useEffect(() => {
     load();
     loadUsers();
     loadDepartments();
+    loadCategories();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -122,7 +129,7 @@ export default function AssetDetail() {
             <>
               <h1 className="text-2xl font-semibold">{asset.name}</h1>
               <div className="text-sm text-gray-500">
-                {asset.internalCode} · {asset.category} · {asset.location || 'fara locatie'}
+                {asset.internalCode} · {asset.categoryRef?.name || asset.category || 'fara categorie'} · {asset.location || 'fara locatie'}
               </div>
               <div className="text-sm text-gray-500">
                 Departament: {asset.department?.name || 'nedefinit'} · Status: {asset.status}
@@ -156,9 +163,15 @@ export default function AssetDetail() {
             onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
             className="border rounded-lg px-3 py-2 text-sm" />
 
-          <input required placeholder="Categorie" value={editForm.category}
-            onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
-            className="border rounded-lg px-3 py-2 text-sm" />
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Categorie</label>
+            <select required value={editForm.categoryId}
+              onChange={(e) => setEditForm({ ...editForm, categoryId: e.target.value })}
+              className="border rounded-lg px-3 py-2 text-sm w-full">
+              <option value="">Selecteaza categoria...</option>
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
 
           <input placeholder="Locatie" value={editForm.location}
             onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
