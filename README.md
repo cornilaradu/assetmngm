@@ -50,6 +50,23 @@ implicit zilnic la 07:00) parcurge toate schedule-urile active si:
 Exista si un endpoint manual `POST /api/maintenance/run-reminder-check` (doar ADMIN)
 pentru a declansa verificarea imediat, util la testare.
 
+### Documente atasate la mentenante
+
+La marcarea unei mentenante ca "efectuata", este **obligatoriu** sa fie atasat cel putin
+un document (certificat, raport de service, poza etc.) — validare aplicata atat in interfata,
+cat si in backend (nu doar cosmetic). Fisierele acceptate: PDF, Word, Excel, JPG, PNG, WEBP,
+maxim 15MB per fisier (configurabil din `MAX_FILE_SIZE_MB`).
+
+**Important pentru deploy:** fisierele sunt salvate pe disc la calea din `UPLOAD_DIR` (`.env`
+backend). Aceasta cale **trebuie sa fie in afara folderului proiectului** (ex:
+`/var/lib/asset-maintenance/uploads`), altfel un re-deploy prin re-clonare din git le va sterge.
+La instalare, creeaza folderul si acorda drepturi utilizatorului care ruleaza aplicatia:
+
+```bash
+sudo mkdir -p /var/lib/asset-maintenance/uploads
+sudo chown -R $USER:$USER /var/lib/asset-maintenance/uploads
+```
+
 ## Instalare si rulare (local, fara Docker)
 
 ### 1. Backend

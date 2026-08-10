@@ -105,5 +105,20 @@ model MaintenanceHistory {
   performedAt   DateTime @default(now())
   performedBy   String?  // nume/email liber (nu neaparat user din sistem, poate fi tehnician extern)
   notes         String?
+  documents     MaintenanceDocument[]
   createdAt     DateTime @default(now())
+}
+
+// Documentul de mentenanta atasat unei interventii (certificat, raport de service, poza etc.)
+// Cel putin un document este obligatoriu la marcarea unei mentenante ca efectuata.
+model MaintenanceDocument {
+  id          String   @id @default(cuid())
+  history     MaintenanceHistory @relation(fields: [historyId], references: [id], onDelete: Cascade)
+  historyId   String
+  fileName    String   // numele original al fisierului
+  storedName  String   // numele generat pe disc (unic, evita coliziuni)
+  filePath    String   // cale relativa fata de UPLOAD_DIR
+  fileSize    Int      // in bytes
+  mimeType    String
+  uploadedAt  DateTime @default(now())
 }

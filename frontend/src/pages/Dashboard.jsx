@@ -1,11 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import api from '../api/client';
 import StatusBadge from '../components/StatusBadge';
+import MarkPerformedModal from '../components/MarkPerformedModal';
+import { useAuth } from '../context/AuthContext';
 
 export default function Dashboard() {
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
+  const [performModalSchedule, setPerformModalSchedule] = useState(null);
+  const { user } = useAuth();
+  const canPerform = ['ADMIN', 'MANAGER', 'TECHNICIAN'].includes(user?.role);
 
   async function load() {
     setLoading(true);
@@ -24,8 +29,8 @@ export default function Dashboard() {
     return acc;
   }, {});
 
-  async function markPerformed(id) {
-    await api.post(`/maintenance/${id}/mark-performed`, {});
+  function handlePerformSuccess() {
+    setPerformModalSchedule(null);
     load();
   }
 
@@ -75,18 +80,30 @@ export default function Dashboard() {
                 <td className="p-3">{s.responsible?.fullName || '—'}</td>
                 <td className="p-3"><StatusBadge status={s.status} /></td>
                 <td className="p-3">
-                  <button
-                    onClick={() => markPerformed(s.id)}
-                    className="text-brand-600 hover:underline text-xs font-medium"
-                  >
-                    Marcheaza efectuata
-                  </button>
+                  {canPerform && (
+                    <button
+                      onClick={() => setPerformModalSchedule(s)}
+                      className="text-brand-600 hover:underline text-xs font-medium"
+                    >
+                      Marcheaza efectuata
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {performModalSchedule && (
+        <MarkPerformedModal
+          scheduleId={performModalSchedule.id}
+          assetName={performModalSchedule.asset?.name}
+          maintenanceType={performModalSchedule.maintenanceType}
+          onClose={() => setPerformModalSchedule(null)}
+          onSuccess={handlePerformSuccess}
+        />
+      )}
     </div>
   );
 }

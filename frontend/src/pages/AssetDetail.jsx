@@ -2,7 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 import StatusBadge from '../components/StatusBadge';
+import MarkPerformedModal from '../components/MarkPerformedModal';
 import { useAuth } from '../context/AuthContext';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
 
 const emptyScheduleForm = {
   maintenanceType: '',
@@ -27,9 +30,12 @@ export default function AssetDetail() {
   const [editForm, setEditForm] = useState(null);
   const [editError, setEditError] = useState('');
 
+  const [performModalSchedule, setPerformModalSchedule] = useState(null);
+
   const { user } = useAuth();
   const navigate = useNavigate();
   const canEdit = ['ADMIN', 'MANAGER'].includes(user?.role);
+  const canPerform = ['ADMIN', 'MANAGER', 'TECHNICIAN'].includes(user?.role);
   const canDelete = user?.role === 'ADMIN';
 
   async function load() {
@@ -75,8 +81,8 @@ export default function AssetDetail() {
     load();
   }
 
-  async function markPerformed(scheduleId) {
-    await api.post(`/maintenance/${scheduleId}/mark-performed`, {});
+  function handlePerformSuccess() {
+    setPerformModalSchedule(null);
     load();
   }
 
@@ -301,21 +307,53 @@ export default function AssetDetail() {
                 <div>{s.responsible?.fullName || '—'}</div>
               </div>
             </div>
-            <button
-              onClick={() => markPerformed(s.id)}
-              className="mt-3 text-brand-600 hover:underline text-xs font-medium"
-            >
-              Marcheaza ca efectuata acum
-            </button>
+            {canPerform && (
+              <button
+                onClick={() => setPerformModalSchedule(s)}
+                className="mt-3 text-brand-600 hover:underline text-xs font-medium"
+              >
+                Marcheaza ca efectuata acum
+              </button>
+            )}
 
             {s.history?.length > 0 && (
               <div className="mt-3 border-t pt-2">
                 <div className="text-xs text-gray-400 mb-1">Istoric</div>
-                <ul className="text-xs text-gray-600 space-y-1">
+                <ul className="text-xs text-gray-600 space-y-2">
                   {s.history.slice(0, 5).map((h) => (
                     <li key={h.id}>
-                      {new Date(h.performedAt).toLocaleDateString('ro-RO')} — {h.performedBy || 'necunoscut'}
-                      {h.notes ? ` (${h.notes})` : ''}
+                      <div>
+                        {new Date(h.performedAt).toLocaleDateString('ro-RO')} — {h.performedBy || 'necunoscut'}
+                        {h.notes ? ` (${h.notes})` : ''}
+                      </div>
+                      {h.documents?.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          {h.documents.map((doc) => (
+                            <a
+                              key={doc.id}
+                              href={`${API_BASE_URL}/maintenance/documents/${doc.id}/download`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 bg-blue-50 text-brand-700 px-2 py-1 rounded border border-blue-100 hover:bg-blue-100"
+                              onClick={(e) => {
+                                // Trimitem tokenul prin fetch + blob, link-ul simplu nu poate atasa header Authorization
+                                e.preventDefault();
+                                api.get(`/maintenance/documents/${doc.id}/download`, { responseType: 'blob' })
+                                  .then((res) => {
+                                    const url = window.URL.createObjectURL(new Blob([res.data]));
+                                    const a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = doc.fileName;
+                                    a.click();
+                                    window.URL.revokeObjectURL(url);
+                                  });
+                              }}
+                            >
+                              📎 {doc.fileName}
+                            </a>
+                          ))}
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -327,6 +365,16 @@ export default function AssetDetail() {
           <div className="text-gray-500">Niciun tip de mentenanta configurat pentru acest asset.</div>
         )}
       </div>
+
+      {performModalSchedule && (
+        <MarkPerformedModal
+          scheduleId={performModalSchedule.id}
+          assetName={asset.name}
+          maintenanceType={performModalSchedule.maintenanceType}
+          onClose={() => setPerformModalSchedule(null)}
+          onSuccess={handlePerformSuccess}
+        />
+      )}
     </div>
   );
 }

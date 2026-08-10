@@ -1,5 +1,8 @@
 const prisma = require('../config/db');
 const { addDays, computeStatus } = require('../utils/date');
+const fs = require('fs');
+const path = require('path');
+const { getUploadRoot } = require('../middleware/upload');
 
 /**
  * Listeaza toate schedule-urile, cu filtre utile pentru dashboard:
@@ -111,27 +114,49 @@ async function updateSchedule(req, res) {
 
 /**
  * Marcheaza o mentenanta ca fiind efectuata:
- * - salveaza o intrare in istoric
+ * - CERE cel putin un document atasat (certificat/raport de service etc.) - fara el, refuza
+ * - salveaza o intrare in istoric + documentele atasate
  * - calculeaza urmatoarea scadenta (nextDueDate + recurrenceDays)
  * - reseteaza reminderSentAt si statusul
+ *
+ * Foloseste multipart/form-data: campuri text (performedAt, performedBy, notes)
+ * + fisiere sub campul "documents" (unul sau mai multe).
  */
 async function markAsPerformed(req, res) {
   try {
     const { performedAt, performedBy, notes } = req.body;
     const scheduleId = req.params.id;
+    const files = req.files || [];
+
+    if (files.length === 0) {
+      return res.status(400).json({
+        error: 'Este obligatoriu sa atasezi cel putin un document (certificat, raport de service etc.) pentru a marca mentenanta ca efectuata.',
+      });
+    }
 
     const schedule = await prisma.maintenanceSchedule.findUnique({ where: { id: scheduleId } });
     if (!schedule) return res.status(404).json({ error: 'Programul de mentenanta nu a fost gasit.' });
 
     const performedDate = performedAt ? new Date(performedAt) : new Date();
+    const uploadRoot = getUploadRoot();
 
-    await prisma.maintenanceHistory.create({
+    const history = await prisma.maintenanceHistory.create({
       data: {
         scheduleId,
         performedAt: performedDate,
         performedBy: performedBy || req.user?.fullName || null,
         notes: notes || null,
+        documents: {
+          create: files.map((f) => ({
+            fileName: f.originalname,
+            storedName: f.filename,
+            filePath: path.relative(uploadRoot, f.path),
+            fileSize: f.size,
+            mimeType: f.mimetype,
+          })),
+        },
       },
+      include: { documents: true },
     });
 
     const isRecurring = schedule.recurrenceDays > 0;
@@ -148,10 +173,30 @@ async function markAsPerformed(req, res) {
       },
     });
 
-    res.json(updated);
+    res.json({ schedule: updated, history });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Eroare la marcarea mentenantei ca efectuata.' });
+  }
+}
+
+/**
+ * Descarca un document de mentenanta atasat (necesita autentificare, verificata in ruta).
+ */
+async function downloadDocument(req, res) {
+  try {
+    const doc = await prisma.maintenanceDocument.findUnique({ where: { id: req.params.docId } });
+    if (!doc) return res.status(404).json({ error: 'Documentul nu a fost gasit.' });
+
+    const fullPath = path.join(getUploadRoot(), doc.filePath);
+    if (!fs.existsSync(fullPath)) {
+      return res.status(404).json({ error: 'Fisierul nu mai exista pe server.' });
+    }
+
+    res.download(fullPath, doc.fileName);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Eroare la descarcarea documentului.' });
   }
 }
 
@@ -165,4 +210,4 @@ async function deleteSchedule(req, res) {
   }
 }
 
-module.exports = { listSchedules, createSchedule, updateSchedule, markAsPerformed, deleteSchedule };
+module.exports = { listSchedules, createSchedule, updateSchedule, markAsPerformed, deleteSchedule, downloadDocument };

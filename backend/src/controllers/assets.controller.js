@@ -40,7 +40,10 @@ async function getAsset(req, res) {
       department: true,
       owner: true,
       maintenanceSchedules: {
-        include: { responsible: true, history: { orderBy: { performedAt: 'desc' } } },
+        include: {
+          responsible: true,
+          history: { orderBy: { performedAt: 'desc' }, include: { documents: true } },
+        },
         orderBy: { nextDueDate: 'asc' },
       },
     },
