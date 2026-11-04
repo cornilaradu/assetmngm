@@ -43,7 +43,7 @@ export default function Calendar() {
       new Date(current.getFullYear(), current.getMonth() + offset, 1)
     );
   }
-
+  const today = new Date();
   const year = month.getFullYear();
   const monthIndex = month.getMonth();
   const firstDay = new Date(year, monthIndex, 1);
@@ -78,7 +78,16 @@ export default function Calendar() {
             ← Anterior
           </button>
 
-          <h2 className="text-xl font-semibold capitalize">{monthLabel}</h2>
+          <div className="flex items-center gap-4">
+           <h2 className="text-xl font-semibold capitalize">{monthLabel}</h2>
+
+           <button
+            onClick={() => setMonth(new Date())}
+            className="px-3 py-2 bg-brand-700 text-white rounded-lg hover:opacity-90 text-sm"
+           >
+            Astazi
+           </button>
+         </div>
 
           <button
             onClick={() => changeMonth(1)}
@@ -102,7 +111,14 @@ export default function Calendar() {
             {cells.map((day, index) => (
               <div
                 key={index}
-                className="min-h-28 border rounded-lg p-2 bg-white"
+                className={`min-h-28 border rounded-lg p-2 ${
+                  day &&
+                  year === today.getFullYear() &&
+                  monthIndex === today.getMonth() &&
+                  day === today.getDate()
+                    ? 'bg-blue-50 border-blue-500 border-2'
+                    : 'bg-white'
+               }`}
               >
                 {day && (
                   <>
