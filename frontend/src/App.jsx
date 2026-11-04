@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import Calendar from './pages/Calendar';
 import Assets from './pages/Assets';
 import AssetDetail from './pages/AssetDetail';
 import Admin from './pages/Admin';
@@ -22,6 +23,7 @@ export default function App() {
         }
       >
         <Route index element={<Dashboard />} />
+        <Route path="calendar" element={<Calendar />} />
         <Route path="assets" element={<Assets />} />
         <Route path="assets/:id" element={<AssetDetail />} />
         <Route path="profile" element={<Profile />} />
