@@ -8,8 +8,21 @@ function addDays(date, days) {
 /** Numarul de zile (poate fi negativ) intre acum si o data data */
 function daysUntil(date) {
   const now = new Date();
-  const diffMs = new Date(date).getTime() - now.getTime();
-  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  const due = new Date(date);
+
+  const todayUTC = Date.UTC(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate()
+  );
+
+  const dueUTC = Date.UTC(
+    due.getFullYear(),
+    due.getMonth(),
+    due.getDate()
+  );
+
+  return Math.round((dueUTC - todayUTC) / 86400000);
 }
 
 /**

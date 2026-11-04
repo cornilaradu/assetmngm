@@ -11,23 +11,43 @@ const { getUploadRoot } = require('../middleware/upload');
  * ?assetId=...
  */
 async function listSchedules(req, res) {
-  const { status, responsibleId, assetId } = req.query;
+  try {
+    const { status, responsibleId, assetId } = req.query;
 
-  const schedules = await prisma.maintenanceSchedule.findMany({
-    where: {
-      active: true,
-      ...(status ? { status } : {}),
-      ...(responsibleId ? { responsibleId } : {}),
-      ...(assetId ? { assetId } : {}),
-    },
-    include: {
-      asset: true,
-      responsible: { select: { id: true, fullName: true, email: true } },
-    },
-    orderBy: { nextDueDate: 'asc' },
-  });
+    const schedules = await prisma.maintenanceSchedule.findMany({
+      where: {
+        active: true,
+        ...(responsibleId ? { responsibleId } : {}),
+        ...(assetId ? { assetId } : {}),
+      },
+      include: {
+        asset: true,
+        responsible: {
+          select: { id: true, fullName: true, email: true },
+        },
+      },
+      orderBy: { nextDueDate: 'asc' },
+    });
 
-  res.json(schedules);
+    const updatedSchedules = schedules.map((schedule) => ({
+      ...schedule,
+      status: computeStatus(
+        schedule.nextDueDate,
+        schedule.reminderDaysBefore
+      ),
+    }));
+
+    const filteredSchedules = status
+      ? updatedSchedules.filter((schedule) => schedule.status === status)
+      : updatedSchedules;
+
+    res.json(filteredSchedules);
+  } catch (err) {
+    console.error('Eroare la listarea mentenantelor:', err);
+    res.status(500).json({
+      error: 'Eroare la obtinerea mentenantelor.',
+    });
+  }
 }
 
 async function createSchedule(req, res) {
