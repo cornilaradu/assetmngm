@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -21,6 +20,10 @@ export default function ImportExport() {
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
+  const [importRows, setImportRows] = useState([]);
+  const [importFileName, setImportFileName] = useState('');
+  const [importLoading, setImportLoading] = useState(false);
+  const [filtersLoaded, setFiltersLoaded] = useState(false);
 
   const canImport = ['ADMIN', 'MANAGER'].includes(user?.role);
 
@@ -35,6 +38,7 @@ export default function ImportExport() {
 
         setCategories(categoriesResponse.data);
         setDepartments(departmentsResponse.data);
+        setFiltersLoaded(true);
       } catch (err) {
         setError('Nu s-au putut incarca filtrele.');
       }
@@ -81,6 +85,73 @@ export default function ImportExport() {
       cancelled = true;
     };
   }, [mode, search, categoryFilter, departmentFilter]);
+  async function handleDownloadTemplate() {
+    setError('');
+
+    try {
+      const { downloadImportTemplate } = await import(
+        '../utils/importExcel'
+      );
+
+      await downloadImportTemplate(categories, departments);
+    } catch (err) {
+      console.error(err);
+      setError('Nu s-a putut genera sablonul Excel.');
+    }
+  }
+  async function handleImportFile(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    setImportRows([]);
+    setImportFileName('');
+    setError('');
+
+    if (!file) return;
+    if (!canImport) {
+      setError('Nu ai permisiunea de a importa asset-uri.');
+      return;
+    }
+    if (!filtersLoaded) {
+      setError('Categoriile si departamentele nu sunt incarcate. Reincarca pagina.');
+      return;
+    }
+    if (!file.name.toLowerCase().endsWith('.xlsx')) {
+      setError('Selecteaza un fisier Excel .xlsx.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Fisierul nu poate depasi 5 MB.');
+      return;
+    }
+
+    setImportLoading(true);
+    try {
+      const { readImportExcel, validateImportRows } = await import('../utils/importExcel');
+      const rows = await readImportExcel(file);
+      if (!rows.length) {
+        setError('Fisierul Excel nu contine asset-uri.');
+        return;
+      }
+      const { data: existingAssets } = await api.get('/assets');
+      if (!Array.isArray(existingAssets)) {
+        throw new Error('Inventarul nu a putut fi verificat integral.');
+      }
+      const validated = validateImportRows(rows, categories, departments, existingAssets);
+      setImportRows(validated);
+      setImportFileName(file.name);
+    } catch (err) {
+      console.error(err);
+      setError(
+        err.message?.startsWith('Fisierul') ||
+        err.message?.startsWith('Coloana') ||
+        err.message?.startsWith('Inventarul')
+          ? err.message
+          : 'Nu s-a putut citi sau valida fisierul Excel.'
+      );
+    } finally {
+      setImportLoading(false);
+    }
+  }
 
   function resetSelection() {
     setSelectedIds([]);
@@ -90,6 +161,8 @@ export default function ImportExport() {
   function changeMode(nextMode) {
     setMode(nextMode);
     resetSelection();
+    setImportRows([]);
+    setImportFileName('');
     setError('');
   }
 
@@ -229,15 +302,8 @@ async function handleExportPdf() {
         <button
           type="button"
           onClick={() => changeMode('import')}
-          disabled={!canImport}
-          className={`text-left bg-white border rounded-xl p-5 transition ${
-            canImport
-              ? 'hover:shadow-md'
-              : 'opacity-50 cursor-not-allowed'
-          } ${
-            mode === 'import'
-              ? 'border-brand-600 ring-1 ring-brand-600'
-              : ''
+          className={`text-left bg-white border rounded-xl p-5 transition hover:shadow-md ${
+            mode === 'import' ? 'border-brand-600 ring-1 ring-brand-600' : ''
           }`}
         >
           <div className="text-lg font-semibold">
@@ -250,7 +316,7 @@ async function handleExportPdf() {
           <div className="text-sm text-brand-600 font-medium mt-4">
             {canImport
               ? 'Configureaza importul'
-              : 'Disponibil pentru ADMIN si MANAGER'}
+              : 'Descarca sablonul Excel'}
           </div>
         </button>
       </div>
@@ -473,20 +539,104 @@ async function handleExportPdf() {
         </div>
       )}
 
-      {mode === 'import' && canImport && (
-        <div className="bg-white border rounded-xl p-5 space-y-3">
+            {mode === 'import' && (
+        <div className="bg-white border rounded-xl p-5 space-y-4">
           <h2 className="text-lg font-semibold">
             Import asset-uri din Excel
           </h2>
+
           <p className="text-sm text-gray-600">
-            Aici vom adauga descarcarea sablonului Excel,
-            incarcarea fisierului, verificarea datelor
-            si confirmarea importului.
+            Descarca sablonul Excel si completeaza datele
+            asset-urilor folosind categoriile si departamentele
+            existente in portal.
           </p>
-          <p className="text-sm text-amber-700">
-            Importul nu este inca activ. Il implementam
-            dupa finalizarea exportului.
-          </p>
+
+          <button
+            type="button"
+            onClick={handleDownloadTemplate}
+            className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+          >
+            Descarca sablon Excel
+          </button>
+
+          {error && (
+            <div className="bg-red-50 text-red-700 text-sm p-3 rounded-lg">
+              {error}
+            </div>
+          )}
+
+          {canImport ? (
+            <div className="border-t pt-4 space-y-4">
+              <h3 className="font-semibold">Incarcare asset-uri</h3>
+              <p className="text-sm text-gray-600">
+                Selecteaza fisierul Excel completat. Datele vor fi verificate
+                inainte de orice import.
+              </p>
+              <input
+                type="file"
+                accept=".xlsx"
+                onChange={handleImportFile}
+                disabled={importLoading || !filtersLoaded}
+                className="block w-full max-w-lg text-sm text-gray-700 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-white hover:file:bg-blue-700 disabled:opacity-50"
+              />
+              {importLoading && (
+                <p className="text-sm text-blue-700">Se citeste si se valideaza fisierul...</p>
+              )}
+              {importFileName && (
+                <p className="text-sm text-gray-600">Fisier incarcat: {importFileName}</p>
+              )}
+              {importRows.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap gap-4 text-sm font-semibold">
+                    <span className="text-green-700">Valide: {importRows.filter((r) => r.status === 'VALID').length}</span>
+                    <span className="text-amber-700">Duplicate: {importRows.filter((r) => r.status === 'DUPLICATE').length}</span>
+                    <span className="text-red-700">Erori: {importRows.filter((r) => r.status === 'ERROR').length}</span>
+                  </div>
+                  <div className="overflow-x-auto border rounded-lg">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="text-left p-3">Rand</th>
+                          <th className="text-left p-3">Asset</th>
+                          <th className="text-left p-3">Cod intern</th>
+                          <th className="text-left p-3">Categorie</th>
+                          <th className="text-left p-3">Departament</th>
+                          <th className="text-left p-3">Status</th>
+                          <th className="text-left p-3">Detalii</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {importRows.map((row) => (
+                          <tr key={row.rowNumber} className="border-t">
+                            <td className="p-3">{row.rowNumber}</td>
+                            <td className="p-3">{row.name}</td>
+                            <td className="p-3">{row.internalCode}</td>
+                            <td className="p-3">{row.categoryName}</td>
+                            <td className="p-3">{row.departmentName}</td>
+                            <td className="p-3 font-semibold">
+                              <span className={row.status === 'VALID' ? 'text-green-700' : row.status === 'DUPLICATE' ? 'text-amber-700' : 'text-red-700'}>
+                                {row.status === 'VALID' ? 'Valid' : row.status === 'DUPLICATE' ? 'Duplicat' : 'Eroare'}
+                              </span>
+                            </td>
+                            <td className="p-3 text-gray-600">
+                              {row.errors.length ? row.errors.join(' ') : 'Pregatit pentru import'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-sm text-gray-500">
+                    Aceasta este doar o previzualizare. Nu a fost creat niciun asset.
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">
+              Incarcarea si importul asset-urilor sunt disponibile doar pentru administratori si manageri.
+            </p>
+          )}
         </div>
       )}
     </div>
