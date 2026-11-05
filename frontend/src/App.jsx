@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -7,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import Calendar from './pages/Calendar';
 import Assets from './pages/Assets';
 import AssetDetail from './pages/AssetDetail';
+import ImportExport from './pages/ImportExport';
 import Admin from './pages/Admin';
 import Profile from './pages/Profile';
 
@@ -26,6 +28,7 @@ export default function App() {
         <Route path="calendar" element={<Calendar />} />
         <Route path="assets" element={<Assets />} />
         <Route path="assets/:id" element={<AssetDetail />} />
+        <Route path="import-export" element={<ImportExport />} />
         <Route path="profile" element={<Profile />} />
         <Route
           path="admin"
