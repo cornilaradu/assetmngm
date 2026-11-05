@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import MarkPerformedModal from '../components/MarkPerformedModal';
@@ -9,25 +10,35 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
   const [performModalSchedule, setPerformModalSchedule] = useState(null);
+
   const { user } = useAuth();
   const canPerform = ['ADMIN', 'MANAGER', 'TECHNICIAN'].includes(user?.role);
 
   async function load() {
     setLoading(true);
-    const { data } = await api.get('/maintenance', { params: filter ? { status: filter } : {} });
-    setSchedules(data);
-    setLoading(false);
+
+    try {
+      const { data } = await api.get('/maintenance');
+      setSchedules(data);
+    } catch (error) {
+      console.error('Eroare la incarcarea mentenantelor:', error);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter]);
+  }, []);
 
   const counts = schedules.reduce((acc, s) => {
     acc[s.status] = (acc[s.status] || 0) + 1;
     return acc;
   }, {});
+
+  const filteredSchedules = filter
+    ? schedules.filter((s) => s.status === filter)
+    : schedules;
 
   function handlePerformSuccess() {
     setPerformModalSchedule(null);
@@ -42,18 +53,37 @@ export default function Dashboard() {
         {['OVERDUE', 'DUE_SOON', 'UPCOMING', 'DONE'].map((status) => (
           <button
             key={status}
+            type="button"
             onClick={() => setFilter(filter === status ? '' : status)}
             className={`p-4 rounded-xl border text-left transition ${
               filter === status ? 'ring-2 ring-brand-600' : ''
             } bg-white`}
           >
-            <div className="text-2xl font-semibold">{counts[status] || 0}</div>
+            <div className="text-2xl font-semibold">
+              {counts[status] || 0}
+            </div>
             <StatusBadge status={status} />
           </button>
         ))}
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+      {filter && (
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm text-gray-600">
+            Filtru activ: <StatusBadge status={filter} />
+          </span>
+
+          <button
+            type="button"
+            onClick={() => setFilter('')}
+            className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-sm font-medium text-brand-600 hover:bg-gray-50"
+          >
+            Afiseaza toate
+          </button>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl shadow-sm border overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-100 text-left">
             <tr>
@@ -65,23 +95,57 @@ export default function Dashboard() {
               <th className="p-3"></th>
             </tr>
           </thead>
+
           <tbody>
             {loading && (
-              <tr><td className="p-4 text-gray-500" colSpan={6}>Se incarca...</td></tr>
+              <tr>
+                <td className="p-4 text-gray-500" colSpan={6}>
+                  Se incarca...
+                </td>
+              </tr>
             )}
-            {!loading && schedules.length === 0 && (
-              <tr><td className="p-4 text-gray-500" colSpan={6}>Nicio mentenanta gasita.</td></tr>
+
+            {!loading && filteredSchedules.length === 0 && (
+              <tr>
+                <td className="p-4 text-gray-500" colSpan={6}>
+                  Nicio mentenanta gasita.
+                </td>
+              </tr>
             )}
-            {schedules.map((s) => (
+
+            {!loading && filteredSchedules.map((s) => (
               <tr key={s.id} className="border-t">
-                <td className="p-3 font-medium">{s.asset?.name}</td>
+                <td className="p-3 font-medium">
+                  {s.asset?.id ? (
+                    <Link
+                      to={`/assets/${s.asset.id}`}
+                      className="text-brand-600 hover:underline"
+                    >
+                      {s.asset.name}
+                    </Link>
+                  ) : (
+                    s.asset?.name || '—'
+                  )}
+                </td>
+
                 <td className="p-3">{s.maintenanceType}</td>
-                <td className="p-3">{new Date(s.nextDueDate).toLocaleDateString('ro-RO')}</td>
-                <td className="p-3">{s.responsible?.fullName || '—'}</td>
-                <td className="p-3"><StatusBadge status={s.status} /></td>
+
+                <td className="p-3">
+                  {new Date(s.nextDueDate).toLocaleDateString('ro-RO')}
+                </td>
+
+                <td className="p-3">
+                  {s.responsible?.fullName || '—'}
+                </td>
+
+                <td className="p-3">
+                  <StatusBadge status={s.status} />
+                </td>
+
                 <td className="p-3">
                   {canPerform && (
                     <button
+                      type="button"
                       onClick={() => setPerformModalSchedule(s)}
                       className="text-brand-600 hover:underline text-xs font-medium"
                     >
