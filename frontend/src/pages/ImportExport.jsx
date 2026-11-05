@@ -23,6 +23,9 @@ export default function ImportExport() {
   const [importRows, setImportRows] = useState([]);
   const [importFileName, setImportFileName] = useState('');
   const [importLoading, setImportLoading] = useState(false);
+  const [selectedImportRows, setSelectedImportRows] = useState([]);
+  const [importSaving, setImportSaving] = useState(false);
+  const [importResult, setImportResult] = useState(null);
   const [filtersLoaded, setFiltersLoaded] = useState(false);
 
   const canImport = ['ADMIN', 'MANAGER'].includes(user?.role);
@@ -103,6 +106,8 @@ export default function ImportExport() {
     const file = event.target.files?.[0];
     event.target.value = '';
     setImportRows([]);
+    setSelectedImportRows([]);
+    setImportResult(null);
     setImportFileName('');
     setError('');
 
@@ -137,8 +142,16 @@ export default function ImportExport() {
         throw new Error('Inventarul nu a putut fi verificat integral.');
       }
       const validated = validateImportRows(rows, categories, departments, existingAssets);
-      setImportRows(validated);
-      setImportFileName(file.name);
+
+       setImportRows(validated);
+
+        setSelectedImportRows(
+          validated
+         .filter((row) => row.status === 'VALID')
+         .map((row) => row.rowNumber)
+    );
+
+setImportFileName(file.name);
     } catch (err) {
       console.error(err);
       setError(
@@ -152,17 +165,112 @@ export default function ImportExport() {
       setImportLoading(false);
     }
   }
+async function handleConfirmImport() {
+  if (!canImport || importSaving || importLoading) return;
 
+  const rowsToImport = importRows.filter(
+    (row) =>
+      row.status === 'VALID' &&
+      selectedImportRows.includes(row.rowNumber)
+  );
+
+  if (rowsToImport.length === 0) return;
+
+  const confirmed = window.confirm(
+    `Esti sigur ca doresti sa importi ${rowsToImport.length} asset-uri selectate?`
+  );
+
+  if (!confirmed) return;
+
+  setImportSaving(true);
+  setImportResult(null);
+  setError('');
+
+  let created = 0;
+  let failed = 0;
+  const updatedRows = [...importRows];
+
+  try {
+    for (const row of rowsToImport) {
+      const index = updatedRows.findIndex(
+        (item) => item.rowNumber === row.rowNumber
+      );
+
+      try {
+        await api.post('/assets', row.payload);
+
+        created++;
+
+        updatedRows[index] = {
+          ...row,
+          status: 'IMPORTED',
+          errors: [],
+        };
+            } catch (err) {
+        failed++;
+
+        const status = err.response?.status;
+        const noResponse = !err.response;
+
+        updatedRows[index] = {
+          ...row,
+          status: noResponse
+            ? 'UNVERIFIED'
+            : status === 409
+              ? 'DUPLICATE'
+              : 'ERROR',
+          errors: [
+            noResponse
+              ? 'Nu am primit raspuns de la server. Verifica daca asset-ul exista deja in inventar inainte de o noua incercare.'
+              : err.response?.data?.error ||
+                'Serverul a respins importul acestui asset.',
+          ],
+        };
+      }
+
+      setImportRows([...updatedRows]);
+      setSelectedImportRows((current) =>
+        current.filter((id) => id !== row.rowNumber)
+      );
+    }
+
+    setImportResult({ created, failed });
+  } finally {
+    setImportSaving(false);
+  }
+}
+function toggleImportRow(rowNumber) {
+  setSelectedImportRows((current) =>
+    current.includes(rowNumber)
+      ? current.filter((id) => id !== rowNumber)
+      : [...current, rowNumber]
+  );
+}
+
+function selectAllImportRows() {
+  setSelectedImportRows(
+    importRows
+      .filter((row) => row.status === 'VALID')
+      .map((row) => row.rowNumber)
+  );
+}
+
+function deselectAllImportRows() {
+  setSelectedImportRows([]);
+}
   function resetSelection() {
     setSelectedIds([]);
     setSelectionMode(false);
   }
 
   function changeMode(nextMode) {
+    if (importSaving) return;
     setMode(nextMode);
     resetSelection();
     setImportRows([]);
-    setImportFileName('');
+setSelectedImportRows([]);
+setImportResult(null);
+setImportFileName('');
     setError('');
   }
 
@@ -281,6 +389,7 @@ async function handleExportPdf() {
         <button
           type="button"
           onClick={() => changeMode('export')}
+          disabled={importSaving}
           className={`text-left bg-white border rounded-xl p-5 hover:shadow-md transition ${
             mode === 'export'
               ? 'border-brand-600 ring-1 ring-brand-600'
@@ -302,6 +411,7 @@ async function handleExportPdf() {
         <button
           type="button"
           onClick={() => changeMode('import')}
+          disabled={importSaving}
           className={`text-left bg-white border rounded-xl p-5 transition hover:shadow-md ${
             mode === 'import' ? 'border-brand-600 ring-1 ring-brand-600' : ''
           }`}
@@ -576,7 +686,7 @@ async function handleExportPdf() {
                 type="file"
                 accept=".xlsx"
                 onChange={handleImportFile}
-                disabled={importLoading || !filtersLoaded}
+                disabled={importLoading || importSaving || !filtersLoaded}
                 className="block w-full max-w-lg text-sm text-gray-700 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-white hover:file:bg-blue-700 disabled:opacity-50"
               />
               {importLoading && (
@@ -592,10 +702,34 @@ async function handleExportPdf() {
                     <span className="text-amber-700">Duplicate: {importRows.filter((r) => r.status === 'DUPLICATE').length}</span>
                     <span className="text-red-700">Erori: {importRows.filter((r) => r.status === 'ERROR').length}</span>
                   </div>
+<div className="flex flex-wrap items-center gap-3">
+  <button
+    type="button"
+    onClick={selectAllImportRows}
+    disabled={importSaving}
+    className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-100 disabled:opacity-50"
+  >
+    Selecteaza toate
+  </button>
+
+  <button
+    type="button"
+    onClick={deselectAllImportRows}
+    disabled={importSaving}
+    className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-100 disabled:opacity-50"
+  >
+    Deselecteaza toate
+  </button>
+
+  <span className="text-sm font-semibold text-emerald-700">
+    {selectedImportRows.length} asset-uri selectate pentru import
+  </span>
+</div>
                   <div className="overflow-x-auto border rounded-lg">
                     <table className="min-w-full text-sm">
                       <thead className="bg-gray-100">
                         <tr>
+                          <th className="text-center p-3">Selecteaza</th>
                           <th className="text-left p-3">Rand</th>
                           <th className="text-left p-3">Asset</th>
                           <th className="text-left p-3">Cod intern</th>
@@ -608,27 +742,83 @@ async function handleExportPdf() {
                       <tbody>
                         {importRows.map((row) => (
                           <tr key={row.rowNumber} className="border-t">
+                          <td className="p-3 text-center">
+                             <input
+                              type="checkbox"
+                              checked={selectedImportRows.includes(row.rowNumber)}
+                              onChange={() => toggleImportRow(row.rowNumber)}
+                              disabled={row.status !== 'VALID' || importSaving}
+                              className="h-4 w-4 cursor-pointer accent-emerald-600 disabled:cursor-not-allowed"
+                              />
+                            </td>
                             <td className="p-3">{row.rowNumber}</td>
                             <td className="p-3">{row.name}</td>
                             <td className="p-3">{row.internalCode}</td>
                             <td className="p-3">{row.categoryName}</td>
                             <td className="p-3">{row.departmentName}</td>
                             <td className="p-3 font-semibold">
-                              <span className={row.status === 'VALID' ? 'text-green-700' : row.status === 'DUPLICATE' ? 'text-amber-700' : 'text-red-700'}>
-                                {row.status === 'VALID' ? 'Valid' : row.status === 'DUPLICATE' ? 'Duplicat' : 'Eroare'}
-                              </span>
+                              <span
+  className={
+    row.status === 'VALID' || row.status === 'IMPORTED'
+      ? 'text-green-700'
+      : row.status === 'DUPLICATE'
+        ? 'text-amber-700'
+        : 'text-red-700'
+  }
+>
+  {row.status === 'IMPORTED'
+  ? 'Importat'
+  : row.status === 'UNVERIFIED'
+    ? 'Neverificat'
+    : row.status === 'VALID'
+      ? 'Valid'
+      : row.status === 'DUPLICATE'
+        ? 'Duplicat'
+        : 'Eroare'}
+</span>
                             </td>
                             <td className="p-3 text-gray-600">
-                              {row.errors.length ? row.errors.join(' ') : 'Pregatit pentru import'}
+                              {row.status === 'IMPORTED'
+  ? 'Importat cu succes'
+  : row.errors.length
+    ? row.errors.join(' ')
+    : 'Pregatit pentru import'}
                             </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                  <p className="text-sm text-gray-500">
-                    Aceasta este doar o previzualizare. Nu a fost creat niciun asset.
-                  </p>
+                  {!importResult && (
+  <p className="text-sm text-gray-500">
+    Aceasta este doar o previzualizare. Nu a fost creat niciun asset.
+  </p>
+)}
+
+{importResult && (
+  <div className="rounded-lg bg-blue-50 p-4 text-sm text-blue-800">
+    <p className="font-semibold">Rezultat import</p>
+    <p>Asset-uri create: {importResult.created}</p>
+    <p>Asset-uri nereusite: {importResult.failed}</p>
+  </div>
+)}
+
+<div className="flex flex-wrap items-center gap-3">
+  <button
+    type="button"
+    onClick={handleConfirmImport}
+    disabled={
+      importSaving ||
+      importLoading ||
+      selectedImportRows.length === 0
+    }
+    className="rounded-lg bg-emerald-600 px-5 py-2.5 font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+  >
+    {importSaving
+      ? 'Se importa asset-urile...'
+      : `Importa ${selectedImportRows.length} asset-uri selectate`}
+  </button>
+</div>
                 </div>
               )}
             </div>
