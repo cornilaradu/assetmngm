@@ -177,7 +177,7 @@ async function handleConfirmImport() {
   if (rowsToImport.length === 0) return;
 
   const confirmed = window.confirm(
-    `Esti sigur ca doresti sa importi ${rowsToImport.length} asset-uri selectate?`
+    `Esti sigur ca doresti sa importi ${rowsToImport.length} ${rowsToImport.length === 1 ? 'asset selectat' : 'asseturi selectate'}?`
   );
 
   if (!confirmed) return;
@@ -722,7 +722,7 @@ async function handleExportPdf() {
   </button>
 
   <span className="text-sm font-semibold text-emerald-700">
-    {selectedImportRows.length} asset-uri selectate pentru import
+    {selectedImportRows.length} {selectedImportRows.length === 1 ? 'asset selectat' : 'asseturi selectate'} pentru import
   </span>
 </div>
                   <div className="overflow-x-auto border rounded-lg">
@@ -816,7 +816,7 @@ async function handleExportPdf() {
   >
     {importSaving
       ? 'Se importa asset-urile...'
-      : `Importa ${selectedImportRows.length} asset-uri selectate`}
+      : `Importa ${selectedImportRows.length} ${selectedImportRows.length === 1 ? 'asset selectat' : 'asseturi selectate'}`}
   </button>
 </div>
                 </div>
