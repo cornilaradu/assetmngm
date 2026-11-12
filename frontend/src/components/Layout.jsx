@@ -2,6 +2,7 @@
 import React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import NotificationBell from './NotificationBell';
 
 const navItems = [
   { to: '/', label: 'Dashboard' },
@@ -70,7 +71,10 @@ export default function Layout() {
         </div>
       </aside>
 
-      <main className="flex-1 p-8 overflow-y-auto">
+      <main className="flex-1 min-w-0 p-8 overflow-y-auto">
+        <div className="mb-6 flex justify-end">
+          <NotificationBell />
+        </div>
         <Outlet />
       </main>
     </div>

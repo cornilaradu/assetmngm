@@ -43,6 +43,7 @@ model User {
 
   responsibleFor MaintenanceSchedule[] @relation("ResponsibleUser")
   assetsOwned    Asset[]               @relation("AssetOwner")
+  notificationReads NotificationRead[]
 }
 
 model AssetCategory {
@@ -102,6 +103,7 @@ model MaintenanceSchedule {
   active             Boolean  @default(true)
 
   history           MaintenanceHistory[]
+  notificationReads NotificationRead[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -131,4 +133,22 @@ model MaintenanceDocument {
   fileSize    Int      // in bytes
   mimeType    String
   uploadedAt  DateTime @default(now())
+}
+
+
+// Evidenta alertelor citite, individual pentru fiecare utilizator.
+model NotificationRead {
+  id         String   @id @default(cuid())
+  userId     String
+  scheduleId String
+  status     MaintenanceStatus
+  dueDate    DateTime
+  readAt     DateTime @default(now())
+
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schedule   MaintenanceSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, scheduleId, status, dueDate])
+  @@index([userId])
+  @@index([scheduleId])
 }
