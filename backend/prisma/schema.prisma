@@ -16,10 +16,10 @@ enum Role {
 }
 
 enum MaintenanceStatus {
-  UPCOMING   // programata, in viitor
-  DUE_SOON   // se apropie scadenta (in intervalul de reminder)
-  OVERDUE    // depasita
-  DONE       // efectuata la timp / marcata ca finalizata
+  UPCOMING // programata, in viitor
+  DUE_SOON // se apropie scadenta (in intervalul de reminder)
+  OVERDUE // depasita
+  DONE // efectuata la timp / marcata ca finalizata
 }
 
 model Department {
@@ -31,19 +31,20 @@ model Department {
 }
 
 model User {
-  id             String       @id @default(cuid())
-  email          String       @unique
-  passwordHash   String
-  fullName       String
-  role           Role         @default(VIEWER)
-  department     Department?  @relation(fields: [departmentId], references: [id])
-  departmentId   String?
-  active         Boolean      @default(true)
-  createdAt      DateTime     @default(now())
+  id           String      @id @default(cuid())
+  email        String      @unique
+  passwordHash String
+  fullName     String
+  role         Role        @default(VIEWER)
+  department   Department? @relation(fields: [departmentId], references: [id])
+  departmentId String?
+  active       Boolean     @default(true)
+  createdAt    DateTime    @default(now())
 
-  responsibleFor MaintenanceSchedule[] @relation("ResponsibleUser")
-  assetsOwned    Asset[]               @relation("AssetOwner")
+  responsibleFor    MaintenanceSchedule[] @relation("ResponsibleUser")
+  assetsOwned       Asset[]               @relation("AssetOwner")
   notificationReads NotificationRead[]
+  moduleAccess      UserModuleAccess[]
 }
 
 model AssetCategory {
@@ -54,23 +55,26 @@ model AssetCategory {
 }
 
 model Asset {
-  id            String   @id @default(cuid())
-  name          String
-  internalCode  String   @unique
-  category      String?  // camp vechi, text liber - pastrat doar pentru asset-uri create inainte de introducerea categoriilor gestionate
-  location      String?
-  description   String?
-  purchaseDate  DateTime?
-  status        String   @default("ACTIVE") // ACTIVE, RETIRED, IN_REPAIR
+  id           String    @id @default(cuid())
+  name         String
+  internalCode String    @unique
+  category     String? // camp vechi, text liber - pastrat doar pentru asset-uri create inainte de introducerea categoriilor gestionate
+  location     String?
+  description  String?
+  purchaseDate DateTime?
+  status       String    @default("ACTIVE") // ACTIVE, RETIRED, IN_REPAIR
 
-  categoryRef   AssetCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  categoryId    String?
+  categoryRef AssetCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryId  String?
 
-  department    Department? @relation(fields: [departmentId], references: [id])
-  departmentId  String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  departmentId String?
 
-  owner         User?    @relation("AssetOwner", fields: [ownerId], references: [id])
-  ownerId       String?
+  owner   User?   @relation("AssetOwner", fields: [ownerId], references: [id])
+  ownerId String?
+
+  module   MaintenanceModule? @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  moduleId String?
 
   maintenanceSchedules MaintenanceSchedule[]
 
@@ -81,26 +85,26 @@ model Asset {
 // Un "tip de mentenanta" configurat pentru un asset (ex: "Revizie tehnica anuala",
 // "Verificare ISCIR", "Schimb ulei", etc.) cu recurenta proprie.
 model MaintenanceSchedule {
-  id                String   @id @default(cuid())
-  asset             Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  assetId           String
+  id      String @id @default(cuid())
+  asset   Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  assetId String
 
-  maintenanceType   String   // ex: "Revizie anuala", "Verificare PSI", "Calibrare"
-  description       String?
+  maintenanceType String // ex: "Revizie anuala", "Verificare PSI", "Calibrare"
+  description     String?
 
-  recurrenceDays    Int      // la cate zile se repeta mentenanta (0 = one-time)
-  lastPerformedAt   DateTime?
-  nextDueDate       DateTime
+  recurrenceDays  Int // la cate zile se repeta mentenanta (0 = one-time)
+  lastPerformedAt DateTime?
+  nextDueDate     DateTime
 
-  reminderDaysBefore Int     @default(7) // cu cate zile inainte se trimite reminder-ul
-  reminderSentAt      DateTime?          // ultima data cand s-a trimis reminder pt scadenta curenta
+  reminderDaysBefore Int       @default(7) // cu cate zile inainte se trimite reminder-ul
+  reminderSentAt     DateTime? // ultima data cand s-a trimis reminder pt scadenta curenta
 
-  responsible       User?    @relation("ResponsibleUser", fields: [responsibleId], references: [id])
-  responsibleId     String?
+  responsible        User?   @relation("ResponsibleUser", fields: [responsibleId], references: [id])
+  responsibleId      String?
   responsibleEmailCc String? // email suplimentar (ex: email de departament), optional
 
-  status            MaintenanceStatus @default(UPCOMING)
-  active             Boolean  @default(true)
+  status MaintenanceStatus @default(UPCOMING)
+  active Boolean           @default(true)
 
   history           MaintenanceHistory[]
   notificationReads NotificationRead[]
@@ -111,44 +115,68 @@ model MaintenanceSchedule {
 
 // Istoric: fiecare data cand o mentenanta a fost efectiv realizata
 model MaintenanceHistory {
-  id            String   @id @default(cuid())
-  schedule      MaintenanceSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
-  scheduleId    String
-  performedAt   DateTime @default(now())
-  performedBy   String?  // nume/email liber (nu neaparat user din sistem, poate fi tehnician extern)
-  notes         String?
-  documents     MaintenanceDocument[]
-  createdAt     DateTime @default(now())
+  id          String                @id @default(cuid())
+  schedule    MaintenanceSchedule   @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  scheduleId  String
+  performedAt DateTime              @default(now())
+  performedBy String? // nume/email liber (nu neaparat user din sistem, poate fi tehnician extern)
+  notes       String?
+  documents   MaintenanceDocument[]
+  createdAt   DateTime              @default(now())
 }
 
 // Documentul de mentenanta atasat unei interventii (certificat, raport de service, poza etc.)
 // Cel putin un document este obligatoriu la marcarea unei mentenante ca efectuata.
 model MaintenanceDocument {
-  id          String   @id @default(cuid())
-  history     MaintenanceHistory @relation(fields: [historyId], references: [id], onDelete: Cascade)
-  historyId   String
-  fileName    String   // numele original al fisierului
-  storedName  String   // numele generat pe disc (unic, evita coliziuni)
-  filePath    String   // cale relativa fata de UPLOAD_DIR
-  fileSize    Int      // in bytes
-  mimeType    String
-  uploadedAt  DateTime @default(now())
+  id         String             @id @default(cuid())
+  history    MaintenanceHistory @relation(fields: [historyId], references: [id], onDelete: Cascade)
+  historyId  String
+  fileName   String // numele original al fisierului
+  storedName String // numele generat pe disc (unic, evita coliziuni)
+  filePath   String // cale relativa fata de UPLOAD_DIR
+  fileSize   Int // in bytes
+  mimeType   String
+  uploadedAt DateTime           @default(now())
 }
-
 
 // Evidenta alertelor citite, individual pentru fiecare utilizator.
 model NotificationRead {
-  id         String   @id @default(cuid())
+  id         String            @id @default(cuid())
   userId     String
   scheduleId String
   status     MaintenanceStatus
   dueDate    DateTime
-  readAt     DateTime @default(now())
+  readAt     DateTime          @default(now())
 
-  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  schedule   MaintenanceSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  user     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schedule MaintenanceSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
 
   @@unique([userId, scheduleId, status, dueDate])
   @@index([userId])
   @@index([scheduleId])
+}
+
+// Module independente de categoriile si departamentele asset-urilor.
+model MaintenanceModule {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  assets     Asset[]
+  userAccess UserModuleAccess[]
+}
+
+// Accesul unui utilizator la un modul.
+model UserModuleAccess {
+  id        String   @id @default(cuid())
+  userId    String
+  moduleId  String
+  createdAt DateTime @default(now())
+
+  user   User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  module MaintenanceModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, moduleId])
 }

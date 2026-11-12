@@ -3,7 +3,11 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function ProtectedRoute({ children, roles }) {
-  const { user } = useAuth();
+  const { user, authReady } = useAuth();
+
+  if (!authReady) {
+    return <div className="p-8 text-slate-500">Se verifică autentificarea...</div>;
+  }
 
   if (!user) return <Navigate to="/login" replace />;
   if (roles && !roles.includes(user.role)) {

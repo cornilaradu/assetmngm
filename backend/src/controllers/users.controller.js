@@ -6,6 +6,18 @@ async function listUsers(req, res) {
     select: {
       id: true, email: true, fullName: true, role: true, active: true,
       department: true, createdAt: true,
+      moduleAccess: {
+        select: {
+          moduleId: true,
+          module: {
+            select: {
+              code: true,
+              name: true,
+              active: true,
+            },
+          },
+        },
+      },
     },
     orderBy: { fullName: 'asc' },
   });
@@ -40,6 +52,104 @@ async function updateUser(req, res) {
   }
 }
 
+async function updateUserModules(req, res) {
+  try {
+    const { moduleIds } = req.body || {};
+
+    if (
+      !Array.isArray(moduleIds) ||
+      moduleIds.some(id => typeof id !== 'string' || !id.trim()) ||
+      new Set(moduleIds).size !== moduleIds.length
+    ) {
+      return res.status(400).json({
+        error: 'moduleIds trebuie sa fie o lista de ID-uri unice.',
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, role: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'Utilizator negasit.' });
+    }
+
+    const validModules = await prisma.maintenanceModule.findMany({
+      where: {
+        id: { in: moduleIds },
+        active: true,
+      },
+      select: { id: true },
+    });
+
+    if (validModules.length !== moduleIds.length) {
+      return res.status(400).json({
+        error: 'Unul sau mai multe module sunt invalide sau inactive.',
+      });
+    }
+
+    await prisma.$transaction(async tx => {
+      await tx.userModuleAccess.deleteMany({
+        where: { userId: user.id },
+      });
+
+      if (moduleIds.length > 0) {
+        await tx.userModuleAccess.createMany({
+          data: moduleIds.map(moduleId => ({
+            userId: user.id,
+            moduleId,
+          })),
+        });
+      }
+    });
+
+    const updated = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        moduleAccess: {
+          select: {
+            moduleId: true,
+            module: {
+              select: { code: true, name: true },
+            },
+          },
+        },
+      },
+    });
+
+    res.json(updated);
+  } catch (err) {
+    console.error('Eroare actualizare module utilizator:', err);
+    res.status(500).json({
+      error: 'Eroare la actualizarea modulelor utilizatorului.',
+    });
+  }
+}
+
+async function listModules(req, res) {
+  try {
+    const modules = await prisma.maintenanceModule.findMany({
+      where: { active: true },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    res.json(modules);
+  } catch (err) {
+    console.error('Eroare listare module:', err);
+    res.status(500).json({ error: 'Eroare la obtinerea modulelor.' });
+  }
+}
+
 async function listDepartments(req, res) {
   const departments = await prisma.department.findMany({ orderBy: { name: 'asc' } });
   res.json(departments);
@@ -58,4 +168,4 @@ async function createDepartment(req, res) {
   }
 }
 
-module.exports = { listUsers, updateUser, listDepartments, createDepartment };
+module.exports = { listUsers, updateUser, updateUserModules, listModules, listDepartments, createDepartment };

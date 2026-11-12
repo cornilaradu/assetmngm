@@ -1,4 +1,5 @@
 const prisma = require('../config/db');
+const { scheduleAccessWhere, assetAccessWhere } = require('../services/module-access.service');
 const { addDays, computeStatus } = require('../utils/date');
 const fs = require('fs');
 const path = require('path');
@@ -12,10 +13,20 @@ const { getUploadRoot } = require('../middleware/upload');
  */
 async function listSchedules(req, res) {
   try {
-    const { status, responsibleId, assetId } = req.query;
+    const { status, responsibleId, assetId, moduleId } = req.query;
+
+    if (moduleId !== undefined &&
+        (typeof moduleId !== 'string' || !moduleId.trim())) {
+      return res.status(400).json({ error: 'moduleId invalid.' });
+    }
 
     const schedules = await prisma.maintenanceSchedule.findMany({
       where: {
+        ...scheduleAccessWhere(req.moduleAccess),
+        ...(moduleId ? { asset: {
+          ...scheduleAccessWhere(req.moduleAccess).asset,
+          moduleId,
+        } } : {}),
         active: true,
         ...(responsibleId ? { responsibleId } : {}),
         ...(assetId ? { assetId } : {}),
@@ -67,6 +78,20 @@ async function createSchedule(req, res) {
       return res.status(400).json({ error: 'assetId, maintenanceType si firstDueDate sunt obligatorii.' });
     }
 
+    const asset = await prisma.asset.findFirst({
+      where: {
+        id: assetId,
+        ...assetAccessWhere(req.moduleAccess),
+      },
+      select: { id: true },
+    });
+
+    if (!asset) {
+      return res.status(404).json({
+        error: 'Asset negasit sau fara acces la modulul acestuia.',
+      });
+    }
+
     const nextDueDate = new Date(firstDueDate);
     const reminderDays = reminderDaysBefore ?? Number(process.env.DEFAULT_REMINDER_DAYS_BEFORE || 7);
 
@@ -104,6 +129,34 @@ async function updateSchedule(req, res) {
       active,
     } = req.body;
 
+    const existing = await prisma.maintenanceSchedule.findFirst({
+      where: {
+        id: req.params.id,
+        ...scheduleAccessWhere(req.moduleAccess),
+      },
+    });
+
+    if (!existing) {
+      return res.status(404).json({
+        error: 'Mentenanta negasita sau fara acces.',
+      });
+    }
+
+    if (nextDueDate !== undefined &&
+        (!nextDueDate || Number.isNaN(new Date(nextDueDate).getTime()))) {
+      return res.status(400).json({ error: 'Data scadentei este invalida.' });
+    }
+
+    for (const [field, value] of [
+      ['recurrenceDays', recurrenceDays],
+      ['reminderDaysBefore', reminderDaysBefore],
+    ]) {
+      if (value !== undefined &&
+          (!Number.isInteger(value) || value < 0)) {
+        return res.status(400).json({ error: field + ' invalid.' });
+      }
+    }
+
     const data = {
       ...(maintenanceType !== undefined ? { maintenanceType } : {}),
       ...(description !== undefined ? { description } : {}),
@@ -117,12 +170,31 @@ async function updateSchedule(req, res) {
     if (nextDueDate !== undefined) {
       data.nextDueDate = new Date(nextDueDate);
       data.reminderSentAt = null; // resetam ca reminder-ul sa poata fi trimis din nou pt noua scadenta
-      data.status = computeStatus(data.nextDueDate, reminderDaysBefore ?? undefined);
     }
 
-    const schedule = await prisma.maintenanceSchedule.update({
-      where: { id: req.params.id },
+    if (nextDueDate !== undefined || reminderDaysBefore !== undefined) {
+      data.status = computeStatus(
+        data.nextDueDate || existing.nextDueDate,
+        reminderDaysBefore ?? existing.reminderDaysBefore
+      );
+    }
+
+    const result = await prisma.maintenanceSchedule.updateMany({
+      where: {
+        id: req.params.id,
+        ...scheduleAccessWhere(req.moduleAccess),
+      },
       data,
+    });
+
+    if (result.count === 0) {
+      return res.status(404).json({
+        error: 'Mentenanta negasita sau fara acces la modulul acesteia.',
+      });
+    }
+
+    const schedule = await prisma.maintenanceSchedule.findUnique({
+      where: { id: req.params.id },
     });
 
     res.json(schedule);
@@ -154,8 +226,18 @@ async function markAsPerformed(req, res) {
       });
     }
 
-    const schedule = await prisma.maintenanceSchedule.findUnique({ where: { id: scheduleId } });
-    if (!schedule) return res.status(404).json({ error: 'Programul de mentenanta nu a fost gasit.' });
+    const schedule = await prisma.maintenanceSchedule.findFirst({
+      where: {
+        id: scheduleId,
+        ...scheduleAccessWhere(req.moduleAccess),
+      },
+    });
+
+    if (!schedule) {
+      return res.status(404).json({
+        error: 'Mentenanta negasita sau fara acces la modulul acesteia.',
+      });
+    }
 
     const performedDate = performedAt ? new Date(performedAt) : new Date();
     const uploadRoot = getUploadRoot();
@@ -205,8 +287,39 @@ async function markAsPerformed(req, res) {
  */
 async function downloadDocument(req, res) {
   try {
-    const doc = await prisma.maintenanceDocument.findUnique({ where: { id: req.params.docId } });
+    const doc = await prisma.maintenanceDocument.findUnique({
+      where: { id: req.params.docId },
+      include: {
+        history: {
+          include: {
+            schedule: {
+              include: {
+                asset: {
+                  select: { moduleId: true, module: { select: { active: true } } },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
     if (!doc) return res.status(404).json({ error: 'Documentul nu a fost gasit.' });
+
+    const asset = doc.history?.schedule?.asset;
+    const access = req.moduleAccess;
+
+    if (
+      !asset ||
+      !access ||
+      (!access.isAdmin && (
+        !asset.module?.active ||
+        !access.moduleIds.includes(asset.moduleId)
+      ))
+    ) {
+      return res.status(404).json({
+        error: 'Document negasit sau fara acces la modulul acestuia.',
+      });
+    }
 
     const fullPath = path.join(getUploadRoot(), doc.filePath);
     if (!fs.existsSync(fullPath)) {
@@ -222,7 +335,19 @@ async function downloadDocument(req, res) {
 
 async function deleteSchedule(req, res) {
   try {
-    await prisma.maintenanceSchedule.delete({ where: { id: req.params.id } });
+    const result = await prisma.maintenanceSchedule.deleteMany({
+      where: {
+        id: req.params.id,
+        ...scheduleAccessWhere(req.moduleAccess),
+      },
+    });
+
+    if (result.count === 0) {
+      return res.status(404).json({
+        error: 'Mentenanta negasita sau fara acces la modulul acesteia.',
+      });
+    }
+
     res.status(204).send();
   } catch (err) {
     console.error(err);

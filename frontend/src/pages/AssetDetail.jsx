@@ -24,6 +24,7 @@ export default function AssetDetail() {
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [modules, setModules] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyScheduleForm);
 
@@ -32,6 +33,10 @@ export default function AssetDetail() {
   const [editError, setEditError] = useState('');
 
   const [performModalSchedule, setPerformModalSchedule] = useState(null);
+  const [editingScheduleId, setEditingScheduleId] = useState(null);
+  const [scheduleEdit, setScheduleEdit] = useState(null);
+  const [scheduleEditError, setScheduleEditError] = useState('');
+  const [scheduleSaving, setScheduleSaving] = useState(false);
 
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -39,11 +44,19 @@ export default function AssetDetail() {
   const canPerform = ['ADMIN', 'MANAGER', 'TECHNICIAN'].includes(user?.role);
   const canDelete = user?.role === 'ADMIN';
 
+  const availableModules = modules.filter((module) =>
+    user?.role === 'ADMIN' ||
+    user?.moduleAccess?.some(
+      (access) => access.moduleId === module.id
+    )
+  );
+
   async function load() {
     const { data } = await api.get(`/assets/${id}`);
     setAsset(data);
     setEditForm({
       name: data.name,
+      moduleId: data.moduleId || '',
       categoryId: data.categoryId || '',
       location: data.location || '',
       description: data.description || '',
@@ -67,6 +80,16 @@ export default function AssetDetail() {
     setDepartments(data);
   }
 
+  async function loadModules() {
+    try {
+      const { data } = await api.get('/users/modules/all');
+      setModules(data);
+    } catch (err) {
+      console.error('Eroare la incarcarea modulelor:', err);
+      setEditError('Nu s-au putut incarca modulele.');
+    }
+  }
+
   async function loadCategories() {
     const { data } = await api.get('/categories');
     setCategories(data);
@@ -77,6 +100,7 @@ export default function AssetDetail() {
     loadUsers();
     loadDepartments();
     loadCategories();
+    loadModules();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -86,6 +110,47 @@ export default function AssetDetail() {
     setForm(emptyScheduleForm);
     setShowForm(false);
     load();
+  }
+
+  function startScheduleEdit(schedule) {
+    setEditingScheduleId(schedule.id);
+    setScheduleEditError('');
+    setScheduleEdit({
+      maintenanceType: schedule.maintenanceType,
+      description: schedule.description || '',
+      nextDueDate: schedule.nextDueDate.slice(0, 10),
+      recurrenceDays: schedule.recurrenceDays,
+      reminderDaysBefore: schedule.reminderDaysBefore,
+      responsibleId: schedule.responsibleId || '',
+      responsibleEmailCc: schedule.responsibleEmailCc || '',
+    });
+  }
+
+  async function handleSaveSchedule(e) {
+    e.preventDefault();
+    if (!editingScheduleId || scheduleSaving) return;
+
+    setScheduleSaving(true);
+    setScheduleEditError('');
+
+    try {
+      await api.put(`/maintenance/${editingScheduleId}`, {
+        ...scheduleEdit,
+        nextDueDate: `${scheduleEdit.nextDueDate}T12:00:00.000Z`,
+        responsibleId: scheduleEdit.responsibleId || null,
+        responsibleEmailCc: scheduleEdit.responsibleEmailCc || null,
+      });
+
+      await load();
+      setEditingScheduleId(null);
+      setScheduleEdit(null);
+    } catch (err) {
+      setScheduleEditError(
+        err.response?.data?.error || 'Nu s-a putut salva mentenanta.'
+      );
+    } finally {
+      setScheduleSaving(false);
+    }
   }
 
   function handlePerformSuccess() {
@@ -162,6 +227,36 @@ export default function AssetDetail() {
           <input required placeholder="Nume asset" value={editForm.name}
             onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
             className="border rounded-lg px-3 py-2 text-sm" />
+
+          <div>
+            <label
+              htmlFor="edit-asset-module"
+              className="block text-xs text-gray-500 mb-1"
+            >
+              Modul mentenanță
+            </label>
+            <select
+              id="edit-asset-module"
+              required
+              value={editForm.moduleId}
+              onChange={(e) =>
+                setEditForm({ ...editForm, moduleId: e.target.value })
+              }
+              className="border rounded-lg px-3 py-2 text-sm w-full"
+            >
+              <option value="">Selectează modulul...</option>
+              {availableModules.map((module) => (
+                <option key={module.id} value={module.id}>
+                  {module.name}
+                </option>
+              ))}
+            </select>
+            {availableModules.length === 0 && (
+              <p className="mt-1 text-xs text-amber-600">
+                Nu ai module disponibile pentru editare.
+              </p>
+            )}
+          </div>
 
           <div>
             <label className="block text-xs text-gray-500 mb-1">Categorie</label>
@@ -300,7 +395,25 @@ export default function AssetDetail() {
                 <div className="font-semibold">{s.maintenanceType}</div>
                 {s.description && <div className="text-sm text-gray-500">{s.description}</div>}
               </div>
-              <StatusBadge status={s.status} />
+              <div className="flex items-center gap-3">
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (editingScheduleId === s.id) {
+                        setEditingScheduleId(null);
+                        setScheduleEdit(null);
+                      } else {
+                        startScheduleEdit(s);
+                      }
+                    }}
+                    className="text-sm font-medium text-brand-600 hover:underline"
+                  >
+                    {editingScheduleId === s.id ? 'Anuleaza' : 'Editeaza mentenanta'}
+                  </button>
+                )}
+                <StatusBadge status={s.status} />
+              </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mt-3">
               <div>
@@ -320,6 +433,95 @@ export default function AssetDetail() {
                 <div>{s.responsible?.fullName || '—'}</div>
               </div>
             </div>
+            {editingScheduleId === s.id && scheduleEdit && (
+              <form
+                onSubmit={handleSaveSchedule}
+                className="mt-4 grid grid-cols-1 gap-4 border-t pt-4 md:grid-cols-2"
+              >
+                {scheduleEditError && (
+                  <div className="md:col-span-2 text-sm text-red-600">
+                    {scheduleEditError}
+                  </div>
+                )}
+                <label className="text-sm">
+                  Tip mentenanta
+                  <input required className="mt-1 w-full rounded-lg border p-2"
+                    value={scheduleEdit.maintenanceType}
+                    onChange={(e) => setScheduleEdit({
+                      ...scheduleEdit, maintenanceType: e.target.value
+                    })} />
+                </label>
+                <label className="text-sm">
+                  Scadenta urmatoare
+                  <input required type="date" className="mt-1 w-full rounded-lg border p-2"
+                    value={scheduleEdit.nextDueDate}
+                    onChange={(e) => setScheduleEdit({
+                      ...scheduleEdit, nextDueDate: e.target.value
+                    })} />
+                </label>
+                <label className="text-sm">
+                  Recurenta (zile)
+                  <input required type="number" min="0" step="1"
+                    className="mt-1 w-full rounded-lg border p-2"
+                    value={scheduleEdit.recurrenceDays}
+                    onChange={(e) => setScheduleEdit({
+                      ...scheduleEdit, recurrenceDays: Number(e.target.value)
+                    })} />
+                </label>
+                <label className="text-sm">
+                  Reminder (zile inainte)
+                  <input required type="number" min="0" step="1"
+                    className="mt-1 w-full rounded-lg border p-2"
+                    value={scheduleEdit.reminderDaysBefore}
+                    onChange={(e) => setScheduleEdit({
+                      ...scheduleEdit, reminderDaysBefore: Number(e.target.value)
+                    })} />
+                </label>
+                <label className="text-sm">
+                  Responsabil
+                  <select className="mt-1 w-full rounded-lg border p-2"
+                    value={scheduleEdit.responsibleId}
+                    onChange={(e) => setScheduleEdit({
+                      ...scheduleEdit, responsibleId: e.target.value
+                    })}>
+                    <option value="">Fara responsabil</option>
+                    {users.map((u) => (
+                      <option key={u.id} value={u.id}>{u.fullName}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm">
+                  Email CC suplimentar
+                  <input type="email" className="mt-1 w-full rounded-lg border p-2"
+                    value={scheduleEdit.responsibleEmailCc}
+                    onChange={(e) => setScheduleEdit({
+                      ...scheduleEdit, responsibleEmailCc: e.target.value
+                    })} />
+                </label>
+                <label className="text-sm md:col-span-2">
+                  Descriere
+                  <textarea className="mt-1 w-full rounded-lg border p-2"
+                    value={scheduleEdit.description}
+                    onChange={(e) => setScheduleEdit({
+                      ...scheduleEdit, description: e.target.value
+                    })} />
+                </label>
+                <div className="flex gap-3 md:col-span-2">
+                  <button type="submit" disabled={scheduleSaving}
+                    className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+                    {scheduleSaving ? 'Se salveaza...' : 'Salveaza modificarile'}
+                  </button>
+                  <button type="button" disabled={scheduleSaving}
+                    onClick={() => {
+                      setEditingScheduleId(null);
+                      setScheduleEdit(null);
+                    }}
+                    className="rounded-lg border px-4 py-2 text-sm">
+                    Anuleaza
+                  </button>
+                </div>
+              </form>
+            )}
             {canPerform && (
               <button
                 onClick={() => setPerformModalSchedule(s)}

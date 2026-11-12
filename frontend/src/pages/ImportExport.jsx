@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { FileDown, FileUp, ArrowRight } from 'lucide-react';
 
 export default function ImportExport() {
   const { user } = useAuth();
@@ -9,6 +10,8 @@ export default function ImportExport() {
   const [assets, setAssets] = useState([]);
   const [categories, setCategories] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [modules, setModules] = useState([]);
+  const [selectedModuleId, setSelectedModuleId] = useState('');
 
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
@@ -30,17 +33,26 @@ export default function ImportExport() {
 
   const canImport = ['ADMIN', 'MANAGER'].includes(user?.role);
 
+  const accessibleModules = modules.filter((module) =>
+    user?.role === 'ADMIN' ||
+    user?.moduleAccess?.some((access) =>
+      (typeof access === 'string' ? access : access.moduleId) === module.id
+    )
+  );
+
   useEffect(() => {
     async function loadFilters() {
       try {
-        const [categoriesResponse, departmentsResponse] =
+        const [categoriesResponse, departmentsResponse, modulesResponse] =
           await Promise.all([
             api.get('/categories'),
             api.get('/users/departments/all'),
+            api.get('/users/modules/all'),
           ]);
 
         setCategories(categoriesResponse.data);
         setDepartments(departmentsResponse.data);
+        setModules(modulesResponse.data);
         setFiltersLoaded(true);
       } catch (err) {
         setError('Nu s-au putut incarca filtrele.');
@@ -112,6 +124,11 @@ export default function ImportExport() {
     setError('');
 
     if (!file) return;
+    if (!selectedModuleId ||
+        !accessibleModules.some((module) => module.id === selectedModuleId)) {
+      setError('Selecteaza un modul la care ai acces.');
+      return;
+    }
     if (!canImport) {
       setError('Nu ai permisiunea de a importa asset-uri.');
       return;
@@ -166,7 +183,11 @@ setImportFileName(file.name);
     }
   }
 async function handleConfirmImport() {
-  if (!canImport || importSaving || importLoading) return;
+  if (!canImport || importSaving || importLoading ||
+      !accessibleModules.some((module) => module.id === selectedModuleId)) {
+    setError('Selecteaza un modul valid inainte de import.');
+    return;
+  }
 
   const rowsToImport = importRows.filter(
     (row) =>
@@ -197,7 +218,10 @@ async function handleConfirmImport() {
       );
 
       try {
-        await api.post('/assets', row.payload);
+        await api.post('/assets', {
+          ...row.payload,
+          moduleId: selectedModuleId,
+        });
 
         created++;
 
@@ -385,26 +409,34 @@ async function handleExportPdf() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
         <button
           type="button"
           onClick={() => changeMode('export')}
           disabled={importSaving}
-          className={`text-left bg-white border rounded-xl p-5 hover:shadow-md transition ${
+          aria-pressed={mode === 'export'}
+          className={`group rounded-2xl border bg-white p-6 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 ${
             mode === 'export'
-              ? 'border-brand-600 ring-1 ring-brand-600'
-              : ''
+              ? 'border-blue-500 ring-2 ring-blue-100'
+              : 'border-slate-200 hover:border-blue-200'
           }`}
         >
-          <div className="text-lg font-semibold">
-            Export date
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+              <FileDown size={24} strokeWidth={1.8} />
+            </div>
+            <ArrowRight size={19} className="text-slate-400 transition group-hover:translate-x-1 group-hover:text-blue-600" />
           </div>
-          <p className="text-sm text-gray-500 mt-2">
-            Exporta asset-uri si mentenante in Excel,
-            folosind filtre sau selectie individuala.
+
+          <h2 className="mt-5 text-lg font-bold text-slate-900">
+            Export date
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            Exportă asset-uri și mentenanțe în Excel sau PDF,
+            folosind filtre sau selecție individuală.
           </p>
-          <div className="text-sm text-brand-600 font-medium mt-4">
-            Configureaza exportul
+          <div className="mt-5 text-sm font-semibold text-blue-600">
+            Configurează exportul
           </div>
         </button>
 
@@ -412,58 +444,66 @@ async function handleExportPdf() {
           type="button"
           onClick={() => changeMode('import')}
           disabled={importSaving}
-          className={`text-left bg-white border rounded-xl p-5 transition hover:shadow-md ${
-            mode === 'import' ? 'border-brand-600 ring-1 ring-brand-600' : ''
+          aria-pressed={mode === 'import'}
+          className={`group rounded-2xl border bg-white p-6 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 ${
+            mode === 'import'
+              ? 'border-blue-500 ring-2 ring-blue-100'
+              : 'border-slate-200 hover:border-blue-200'
           }`}
         >
-          <div className="text-lg font-semibold">
-            Import date
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+              <FileUp size={24} strokeWidth={1.8} />
+            </div>
+            <ArrowRight size={19} className="text-slate-400 transition group-hover:translate-x-1 group-hover:text-blue-600" />
           </div>
-          <p className="text-sm text-gray-500 mt-2">
-            Adauga asset-uri folosind un fisier Excel
-            standardizat.
+
+          <h2 className="mt-5 text-lg font-bold text-slate-900">
+            Import date
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            Adaugă asset-uri folosind un fișier Excel standardizat,
+            cu verificarea datelor înainte de import.
           </p>
-          <div className="text-sm text-brand-600 font-medium mt-4">
-            {canImport
-              ? 'Configureaza importul'
-              : 'Descarca sablonul Excel'}
+          <div className="mt-5 text-sm font-semibold text-blue-600">
+            {canImport ? 'Configurează importul' : 'Descarcă șablonul Excel'}
           </div>
         </button>
       </div>
 
       {mode === 'export' && (
-        <div className="bg-white border rounded-xl p-5 space-y-5">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
           <div>
-            <h2 className="text-lg font-semibold">
+            <h2 className="text-lg font-bold text-slate-900">
               Configurare export
             </h2>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-slate-500">
               Filtreaza inventarul si alege ce doresti
               sa exporti.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-3 rounded-xl border border-slate-100 bg-slate-50/50 p-5">
             <div>
-              <label className="block text-sm font-medium mb-1">
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
                 Cautare
               </label>
               <input
                 value={search}
                 onChange={(e) => changeSearch(e.target.value)}
                 placeholder="Nume sau cod..."
-                className="border rounded-lg px-3 py-2 text-sm w-full"
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
                 Categorie
               </label>
               <select
                 value={categoryFilter}
                 onChange={(e) => changeCategory(e.target.value)}
-                className="border rounded-lg px-3 py-2 text-sm w-full"
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
               >
                 <option value="">Toate categoriile</option>
                 {categories.map((category) => (
@@ -478,13 +518,13 @@ async function handleExportPdf() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
                 Departament
               </label>
               <select
                 value={departmentFilter}
                 onChange={(e) => changeDepartment(e.target.value)}
-                className="border rounded-lg px-3 py-2 text-sm w-full"
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
               >
                 <option value="">Toate departamentele</option>
                 {departments.map((department) => (
@@ -531,9 +571,9 @@ async function handleExportPdf() {
             </button>
           </div>
 
-          <div className="border rounded-lg overflow-x-auto">
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-gray-600">
+              <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   {selectionMode && (
                     <th className="p-3 text-left w-12">
@@ -558,7 +598,7 @@ async function handleExportPdf() {
                   assets.map((asset) => (
                     <tr
                       key={asset.id}
-                      className="border-t hover:bg-gray-50"
+                      className="border-t border-slate-100 transition hover:bg-blue-50/40"
                     >
                       {selectionMode && (
                         <td className="p-3">
@@ -610,7 +650,7 @@ async function handleExportPdf() {
             </div>
           )}
 
-          <div className="flex justify-end gap-3 border-t pt-4">
+          <div className="flex flex-wrap justify-end gap-3 border-t border-slate-100 pt-5">
 <button
   type="button"
   onClick={handleExportPdf}
@@ -620,7 +660,7 @@ async function handleExportPdf() {
     assets.length === 0 ||
     (selectionMode && selectedIds.length === 0)
   }
-  className="bg-red-700 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-red-800 disabled:opacity-50 disabled:cursor-not-allowed"
+  className="rounded-xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
 >
   {exporting
     ? 'Se genereaza...'
@@ -637,7 +677,7 @@ async function handleExportPdf() {
                 assets.length === 0 ||
                 (selectionMode && selectedIds.length === 0)
               }
-              className="bg-green-700 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {exporting
                 ? 'Se genereaza Excel...'
@@ -650,12 +690,12 @@ async function handleExportPdf() {
       )}
 
             {mode === 'import' && (
-        <div className="bg-white border rounded-xl p-5 space-y-4">
-          <h2 className="text-lg font-semibold">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
+          <h2 className="text-lg font-bold text-slate-900">
             Import asset-uri din Excel
           </h2>
 
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-slate-600">
             Descarca sablonul Excel si completeaza datele
             asset-urilor folosind categoriile si departamentele
             existente in portal.
@@ -664,7 +704,7 @@ async function handleExportPdf() {
           <button
             type="button"
             onClick={handleDownloadTemplate}
-            className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+            className="inline-flex items-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
           >
             Descarca sablon Excel
           </button>
@@ -676,9 +716,34 @@ async function handleExportPdf() {
           )}
 
           {canImport ? (
-            <div className="border-t pt-4 space-y-4">
+            <div className="space-y-5 rounded-xl border border-slate-100 bg-slate-50/50 p-5">
               <h3 className="font-semibold">Incarcare asset-uri</h3>
-              <p className="text-sm text-gray-600">
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Modul destinatie
+                </label>
+                <select
+                  value={selectedModuleId}
+                  disabled={importLoading || importSaving}
+                  onChange={(e) => {
+                    setSelectedModuleId(e.target.value);
+                    setImportRows([]);
+                    setSelectedImportRows([]);
+                    setImportFileName('');
+                    setImportResult(null);
+                    setError('');
+                  }}
+                  className="w-full max-w-xl rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                >
+                  <option value="">Selecteaza modulul...</option>
+                  {accessibleModules.map((module) => (
+                    <option key={module.id} value={module.id}>
+                      {module.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-sm text-slate-600">
                 Selecteaza fisierul Excel completat. Datele vor fi verificate
                 inainte de orice import.
               </p>
@@ -686,14 +751,16 @@ async function handleExportPdf() {
                 type="file"
                 accept=".xlsx"
                 onChange={handleImportFile}
-                disabled={importLoading || importSaving || !filtersLoaded}
-                className="block w-full max-w-lg text-sm text-gray-700 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-white hover:file:bg-blue-700 disabled:opacity-50"
+                disabled={importLoading || importSaving || !filtersLoaded ||
+                  !selectedModuleId ||
+                  !accessibleModules.some((module) => module.id === selectedModuleId)}
+                className="block w-full max-w-xl rounded-xl border border-dashed border-blue-200 bg-white p-4 text-sm text-slate-700 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-white hover:file:bg-blue-700 disabled:opacity-50"
               />
               {importLoading && (
                 <p className="text-sm text-blue-700">Se citeste si se valideaza fisierul...</p>
               )}
               {importFileName && (
-                <p className="text-sm text-gray-600">Fisier incarcat: {importFileName}</p>
+                <p className="text-sm text-slate-600">Fisier incarcat: {importFileName}</p>
               )}
               {importRows.length > 0 && (
                 <div className="space-y-4">
@@ -725,9 +792,9 @@ async function handleExportPdf() {
     {selectedImportRows.length} {selectedImportRows.length === 1 ? 'asset selectat' : 'asseturi selectate'} pentru import
   </span>
 </div>
-                  <div className="overflow-x-auto border rounded-lg">
+                  <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
                     <table className="min-w-full text-sm">
-                      <thead className="bg-gray-100">
+                      <thead className="bg-slate-50 text-slate-600">
                         <tr>
                           <th className="text-center p-3">Selecteaza</th>
                           <th className="text-left p-3">Rand</th>
@@ -741,7 +808,7 @@ async function handleExportPdf() {
                       </thead>
                       <tbody>
                         {importRows.map((row) => (
-                          <tr key={row.rowNumber} className="border-t">
+                          <tr key={row.rowNumber} className="border-t border-slate-100 hover:bg-blue-50/40 transition">
                           <td className="p-3 text-center">
                              <input
                               type="checkbox"
@@ -812,7 +879,7 @@ async function handleExportPdf() {
       importLoading ||
       selectedImportRows.length === 0
     }
-    className="rounded-lg bg-emerald-600 px-5 py-2.5 font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+    className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
   >
     {importSaving
       ? 'Se importa asset-urile...'

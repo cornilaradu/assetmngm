@@ -1,9 +1,12 @@
 const prisma = require('../config/db');
+const { assetAccessWhere, canAccessModule } = require('../services/module-access.service');
 
 async function listAssets(req, res) {
-  const { departmentId, categoryId, status, search } = req.query;
+  const { departmentId, categoryId, status, search, moduleId } = req.query;
 
   const where = {
+    ...assetAccessWhere(req.moduleAccess),
+    ...(moduleId ? { moduleId } : {}),
     ...(departmentId ? { departmentId } : {}),
     ...(categoryId ? { categoryId } : {}),
     ...(status ? { status } : {}),
@@ -35,15 +38,18 @@ async function listAssets(req, res) {
 }
 
 async function getAsset(req, res) {
-  const asset = await prisma.asset.findUnique({
-    where: { id: req.params.id },
+  const asset = await prisma.asset.findFirst({
+    where: {
+      id: req.params.id,
+      ...assetAccessWhere(req.moduleAccess),
+    },
     include: {
       department: true,
       categoryRef: true,
-      owner: true,
+      owner: { select: { id: true, fullName: true, email: true } },
       maintenanceSchedules: {
         include: {
-          responsible: true,
+          responsible: { select: { id: true, fullName: true, email: true } },
           history: { orderBy: { performedAt: 'desc' }, include: { documents: true } },
         },
         orderBy: { nextDueDate: 'asc' },
@@ -57,7 +63,7 @@ async function getAsset(req, res) {
 
 async function createAsset(req, res) {
   try {
-    const { name, internalCode, categoryId, location, description, purchaseDate, departmentId, ownerId } = req.body;
+    const { name, internalCode, categoryId, location, description, purchaseDate, departmentId, ownerId, moduleId } = req.body;
 
     if (!name || !internalCode) {
       return res.status(400).json({ error: 'name si internalCode sunt obligatorii.' });
@@ -69,10 +75,27 @@ async function createAsset(req, res) {
       return res.status(400).json({ error: 'departmentId (departamentul responsabil) este obligatoriu.' });
     }
 
+    if (!moduleId || typeof moduleId !== 'string') {
+      return res.status(400).json({ error: 'Selectarea modulului este obligatorie.' });
+    }
+
+    const moduleRecord = await prisma.maintenanceModule.findUnique({
+      where: { id: moduleId },
+    });
+
+    if (!moduleRecord || !moduleRecord.active) {
+      return res.status(400).json({ error: 'Modul invalid sau inactiv.' });
+    }
+
+    if (!canAccessModule(req.moduleAccess, moduleId)) {
+      return res.status(403).json({ error: 'Nu aveti acces la acest modul.' });
+    }
+
     const asset = await prisma.asset.create({
       data: {
         name,
         internalCode,
+        moduleId,
         categoryId,
         location,
         description,
@@ -98,11 +121,45 @@ async function createAsset(req, res) {
 
 async function updateAsset(req, res) {
   try {
-    const { name, categoryId, location, description, status, departmentId, ownerId, purchaseDate } = req.body;
+    const { name, categoryId, location, description, status, departmentId, ownerId, purchaseDate, moduleId } = req.body;
 
-    const asset = await prisma.asset.update({
-      where: { id: req.params.id },
+    const existingAsset = await prisma.asset.findFirst({
+      where: {
+        id: req.params.id,
+        ...assetAccessWhere(req.moduleAccess),
+      },
+      select: { id: true, moduleId: true },
+    });
+
+    if (!existingAsset) {
+      return res.status(404).json({ error: 'Asset negasit.' });
+    }
+
+    if (moduleId !== undefined) {
+      if (!moduleId || typeof moduleId !== 'string') {
+        return res.status(400).json({ error: 'Modul invalid.' });
+      }
+
+      const targetModule = await prisma.maintenanceModule.findUnique({
+        where: { id: moduleId },
+      });
+
+      if (!targetModule || !targetModule.active) {
+        return res.status(400).json({ error: 'Modul invalid sau inactiv.' });
+      }
+
+      if (!canAccessModule(req.moduleAccess, moduleId)) {
+        return res.status(403).json({ error: 'Nu aveti acces la modulul selectat.' });
+      }
+    }
+
+    const result = await prisma.asset.updateMany({
+      where: {
+        id: req.params.id,
+        ...assetAccessWhere(req.moduleAccess),
+      },
       data: {
+        ...(moduleId !== undefined ? { moduleId } : {}),
         ...(name !== undefined ? { name } : {}),
         ...(categoryId !== undefined ? { categoryId: categoryId || null } : {}),
         ...(location !== undefined ? { location } : {}),
@@ -112,6 +169,16 @@ async function updateAsset(req, res) {
         ...(ownerId !== undefined ? { ownerId } : {}),
         ...(purchaseDate !== undefined ? { purchaseDate: purchaseDate ? new Date(purchaseDate) : null } : {}),
       },
+    });
+
+    if (result.count === 0) {
+      return res.status(404).json({
+        error: 'Asset negasit sau fara acces la modulul acestuia.',
+      });
+    }
+
+    const asset = await prisma.asset.findUnique({
+      where: { id: req.params.id },
       include: { categoryRef: true, department: true },
     });
 
@@ -127,6 +194,20 @@ async function updateAsset(req, res) {
 
 async function deleteAsset(req, res) {
   try {
+    const historyCount = await prisma.maintenanceHistory.count({
+      where: {
+        schedule: {
+          assetId: req.params.id,
+        },
+      },
+    });
+
+    if (historyCount > 0) {
+      return res.status(409).json({
+        error: 'Asset-ul are istoric de mentenanta si nu poate fi sters. Folositi statusul RETIRED.',
+      });
+    }
+
     await prisma.asset.delete({ where: { id: req.params.id } });
     res.status(204).send();
   } catch (err) {

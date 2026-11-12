@@ -16,6 +16,32 @@ router.delete('/:id', requireRole('ADMIN', 'MANAGER'), ctrl.deleteSchedule);
 // Necesita cel putin un document atasat (camp "documents", multipart/form-data) - validat in controller.
 // Middleware-ul multer e infasurat ca sa transformam erorile lui (fisier prea mare, tip gresit)
 // in raspunsuri JSON clare, nu crash-uri necontrolate.
+async function checkScheduleModuleAccess(req, res, next) {
+  try {
+    const { scheduleAccessWhere } = require('../services/module-access.service');
+    const prisma = require('../config/db');
+
+    const schedule = await prisma.maintenanceSchedule.findFirst({
+      where: {
+        id: req.params.id,
+        ...scheduleAccessWhere(req.moduleAccess),
+      },
+      select: { id: true },
+    });
+
+    if (!schedule) {
+      return res.status(404).json({
+        error: 'Mentenanta negasita sau fara acces la modulul acesteia.',
+      });
+    }
+
+    next();
+  } catch (err) {
+    console.error('Eroare verificare acces mentenanta:', err);
+    res.status(500).json({ error: 'Eroare la verificarea permisiunilor.' });
+  }
+}
+
 function handleUpload(req, res, next) {
   uploadMaintenanceDocs.array('documents', 10)(req, res, (err) => {
     if (err) {
@@ -28,6 +54,7 @@ function handleUpload(req, res, next) {
 router.post(
   '/:id/mark-performed',
   requireRole('ADMIN', 'MANAGER', 'TECHNICIAN'),
+  checkScheduleModuleAccess,
   handleUpload,
   ctrl.markAsPerformed
 );

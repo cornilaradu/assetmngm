@@ -1,12 +1,16 @@
 const prisma = require('../config/db');
 const { computeStatus } = require('../utils/date');
+const { scheduleAccessWhere } = require('../services/module-access.service');
 
 async function getNotifications(req, res) {
   try {
     const userId = req.user.id;
 
     const schedules = await prisma.maintenanceSchedule.findMany({
-      where: { active: true },
+      where: {
+        active: true,
+        ...scheduleAccessWhere(req.moduleAccess),
+      },
       include: {
         asset: { select: { id: true, name: true } },
       },
@@ -77,8 +81,11 @@ async function markNotificationRead(req, res) {
       return res.status(400).json({ error: 'Status invalid.' });
     }
 
-    const schedule = await prisma.maintenanceSchedule.findUnique({
-      where: { id: scheduleId },
+    const schedule = await prisma.maintenanceSchedule.findFirst({
+      where: {
+        id: scheduleId,
+        ...scheduleAccessWhere(req.moduleAccess),
+      },
     });
 
     if (!schedule || !schedule.active) {

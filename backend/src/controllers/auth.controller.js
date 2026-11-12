@@ -101,7 +101,28 @@ async function changePassword(req, res) {
 async function me(req, res) {
   const user = await prisma.user.findUnique({
     where: { id: req.user.id },
-    select: { id: true, email: true, fullName: true, role: true, departmentId: true },
+    select: {
+      id: true,
+      email: true,
+      fullName: true,
+      role: true,
+      departmentId: true,
+      active: true,
+      moduleAccess: {
+        where: {
+          module: { active: true },
+        },
+        select: {
+          moduleId: true,
+          module: {
+            select: {
+              code: true,
+              name: true,
+            },
+          },
+        },
+      },
+    },
   });
   return res.json(user);
 }
